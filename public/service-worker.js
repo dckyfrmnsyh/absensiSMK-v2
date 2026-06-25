@@ -1,13 +1,9 @@
-const CACHE_NAME = 'absensi-pkl-v';
+const CACHE_NAME = 'absensi-pkl-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/src/main.tsx',
-  '/src/App.tsx',
-  '/src/index.css',
   '/manifest.json',
-  'https://cdn.jsdelivr.net/npm/simple-datatables@latest/dist/style.css',
-  'https://cdn.jsdelivr.net/npm/simple-datatables@latest/dist/umd/simple-datatables.js'
+  '/logo.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -103,8 +99,8 @@ function checkDailyReminders() {
 function showReminderNotification(title, body) {
   const options = {
     body: body,
-    icon: 'https://rhdoyrpfsggakwlnjnpx.supabase.co/storage/v1/object/public/attendance-photos/icon-192.png',
-    badge: 'https://rhdoyrpfsggakwlnjnpx.supabase.co/storage/v1/object/public/attendance-photos/icon-192.png',
+    icon: '/logo.png',
+    badge: '/logo.png',
     vibrate: [200, 100, 200],
     tag: 'daily-reminder',
     renotify: true,

@@ -200,7 +200,7 @@ export default function ProfilTab({
                   // Fallback direct notification
                   new Notification('Uji Coba Pengingat Absensi 🔔', {
                     body: 'Halo! Pengingat harian sistem absensi PKL berhasil dikonfigurasi.',
-                    icon: 'https://rhdoyrpfsggakwlnjnpx.supabase.co/storage/v1/object/public/attendance-photos/icon-192.png'
+                    icon: '/logo.png'
                   });
                   showToast('Notifikasi uji coba dikirim langsung dari browser!', 'success');
                 }

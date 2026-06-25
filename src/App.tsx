@@ -281,7 +281,7 @@ export default function App() {
         lastClientReminderMasuk = dateStr;
         new Notification('Waktunya Absen Masuk!', {
           body: 'Selamat pagi! Jangan lupa melakukan absen masuk magang hari ini.',
-          icon: 'https://rhdoyrpfsggakwlnjnpx.supabase.co/storage/v1/object/public/attendance-photos/icon-192.png'
+          icon: '/logo.png'
         });
       }
 
@@ -290,7 +290,7 @@ export default function App() {
         lastClientReminderKeluar = dateStr;
         new Notification('Waktunya Absen Keluar!', {
           body: 'Selamat sore! Jangan lupa melakukan absen keluar magang sebelum pulang.',
-          icon: 'https://rhdoyrpfsggakwlnjnpx.supabase.co/storage/v1/object/public/attendance-photos/icon-192.png'
+          icon: '/logo.png'
         });
       }
     }, 30000); // Check every 30 seconds
