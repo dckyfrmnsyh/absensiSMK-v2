@@ -1,0 +1,11 @@
+{
+  "name": "Absensi PKL SMKN 1 Tana Tidung",
+  "description": "Sistem Absensi PKL (Praktik Kerja Lapangan) untuk siswa SMK Negeri 1 Tana Tidung dengan fitur absen masuk/keluar, kamera, GPS, ekspor Excel/PDF, dan sinkronisasi offline-online.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
