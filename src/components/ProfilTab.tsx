@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { User, Clipboard, GraduationCap, MapPin, Bell } from 'lucide-react';
+import { User, Clipboard, GraduationCap, MapPin, Bell, Download, Smartphone } from 'lucide-react';
 import { Profile } from '../types';
 
 interface ProfilTabProps {
   profile: Profile;
   onSaveProfile: (updated: Partial<Profile>) => Promise<void>;
   showToast: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
+  onTriggerInstall: () => void;
 }
 
 export default function ProfilTab({
   profile,
   onSaveProfile,
-  showToast
+  showToast,
+  onTriggerInstall
 }: ProfilTabProps) {
   const [nama, setNama] = useState(profile.nama);
   const [kelas, setKelas] = useState(profile.kelas);
@@ -211,6 +213,25 @@ export default function ProfilTab({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* PWA Install Card */}
+      <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
+        <h3 className="text-sm font-extrabold text-slate-850 mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+          <Download className="w-4 h-4 text-cyan-600" />
+          Pasang Aplikasi Absensi (PWA)
+        </h3>
+        <p className="text-xs text-slate-500 leading-relaxed font-bold mb-4">
+          Unduh dan pasang aplikasi ini langsung di layar utama handphone atau komputer Anda untuk akses lebih cepat, stabil, hemat kuota, dan mendukung penuh penggunaan secara offline.
+        </p>
+        <button
+          type="button"
+          onClick={onTriggerInstall}
+          className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3.5 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-cyan-600/15 flex justify-center items-center gap-2 cursor-pointer border-none"
+        >
+          <Smartphone className="w-4 h-4" />
+          Pasang Aplikasi Sekarang
+        </button>
       </div>
     </div>
   );

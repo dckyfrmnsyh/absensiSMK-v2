@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Clock, User, Shield, GraduationCap, ClipboardCheck } from 'lucide-react';
+import { Home, Clock, User, Shield, GraduationCap, ClipboardCheck, Download, Smartphone, Share, Plus, Monitor, X, Check } from 'lucide-react';
 import Header from './components/Header';
 import HomeTab from './components/HomeTab';
 import RiwayatTab from './components/RiwayatTab';
@@ -31,6 +31,10 @@ export default function App() {
     confirmText?: string;
     cancelText?: string;
   } | null>(null);
+
+  // PWA Install States
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Toast Helper
@@ -251,6 +255,19 @@ export default function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Event listener for PWA installation prompt
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      const dismissed = localStorage.getItem('smkn1_pwa_install_dismissed');
+      if (!dismissed) {
+        setTimeout(() => {
+          setShowInstallModal(true);
+        }, 4000); // 4 seconds delay
+      }
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt as any);
+
     // Focus triggers auto sync
     const handleFocus = () => runSync();
     window.addEventListener('focus', handleFocus);
@@ -319,6 +336,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as any);
       clearInterval(clientCheckInterval);
       if (handleSwMessage && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
@@ -789,6 +807,29 @@ export default function App() {
     });
   };
 
+  // PWA Install Handlers
+  const handleInstallApp = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: { outcome: string }) => {
+        if (choiceResult.outcome === 'accepted') {
+          showToast('Terima kasih telah memasang aplikasi!', 'success');
+        } else {
+          showToast('Pemasangan aplikasi dibatalkan.', 'info');
+        }
+        setDeferredPrompt(null);
+        setShowInstallModal(false);
+      });
+    }
+  };
+
+  const handleDismissInstall = (dontShowAgain = false) => {
+    if (dontShowAgain) {
+      localStorage.setItem('smkn1_pwa_install_dismissed', 'true');
+    }
+    setShowInstallModal(false);
+  };
+
   // Login handler
   const handleLoginSuccess = (role: 'siswa' | 'admin', loggedUserId: string) => {
     setUserId(loggedUserId);
@@ -824,6 +865,10 @@ export default function App() {
   // Find today's record for active home state
   const todayKey = new Date().toISOString().split('T')[0];
   const todayRecord = records.find((r) => r.dateKey === todayKey && r.user_id === userId) || null;
+
+  // Device & Platform Checks
+  const isIOS = typeof window !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isStandalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-slate-100 font-sans">
@@ -861,6 +906,7 @@ export default function App() {
               profile={profile}
               onSaveProfile={handleSaveProfile}
               showToast={showToast}
+              onTriggerInstall={() => setShowInstallModal(true)}
             />
           )}
 
@@ -958,6 +1004,108 @@ export default function App() {
                   {confirmModal.confirmText || 'Konfirmasi'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* PWA Install Modal Dialog */}
+        {showInstallModal && !isStandalone && (
+          <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white border border-slate-200/80 w-full max-w-sm rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center">
+              
+              {/* Logo / Icon */}
+              <div className="w-16 h-16 bg-white border border-slate-250/70 rounded-2xl flex justify-center items-center mb-4 shadow-md p-1.5">
+                <img 
+                  src="/logo.png" 
+                  alt="Logo SMK" 
+                  className="w-full h-full object-contain" 
+                  referrerPolicy="no-referrer" 
+                />
+              </div>
+
+              <h3 className="font-extrabold text-slate-800 text-lg mb-1 leading-tight">Pasang Aplikasi Absensi</h3>
+              <p className="text-[11px] font-bold text-slate-400 mb-5">SMK Negeri 1 Tana Tidung</p>
+
+              <div className="text-left w-full bg-slate-50 border border-slate-150 rounded-2xl p-4 mb-5 text-xs text-slate-600 font-bold space-y-3">
+                {deferredPrompt ? (
+                  <p className="text-center text-slate-500 leading-relaxed py-2">
+                    Ingin memasang aplikasi di layar utama perangkat Anda untuk akses offline cepat?
+                  </p>
+                ) : isIOS ? (
+                  <div className="space-y-2">
+                    <p className="text-center text-cyan-600 font-extrabold pb-1">Panduan Pemasangan iOS / Safari:</p>
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
+                      <p className="leading-tight">Ketuk ikon <span className="inline-flex items-center align-middle justify-center p-1 bg-white border border-slate-200 rounded-md text-slate-700 mx-0.5"><Share className="w-3.5 h-3.5" /></span> <strong>Bagikan (Share)</strong> di menu bawah Safari.</p>
+                    </div>
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
+                      <p className="leading-tight">Gulir ke bawah dan ketuk opsi <span className="inline-flex items-center align-middle justify-center p-1 bg-white border border-slate-200 rounded-md text-slate-700 mx-0.5"><Plus className="w-3.5 h-3.5" /></span> <strong>Tambahkan ke Layar Utama</strong>.</p>
+                    </div>
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
+                      <p className="leading-tight">Ketuk tombol <strong>Tambah</strong> di pojok kanan atas layar.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-center text-cyan-600 font-extrabold pb-1">Panduan Pemasangan Manual:</p>
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
+                      <p className="leading-tight">Klik tombol menu <span className="font-extrabold text-slate-800">titik tiga (⋮)</span> di pojok kanan atas browser.</p>
+                    </div>
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
+                      <p className="leading-tight">Pilih menu <span className="font-extrabold text-slate-800">"Instal Aplikasi"</span> atau <span className="font-extrabold text-slate-800">"Tambahkan ke Layar Utama"</span>.</p>
+                    </div>
+                    <div className="flex gap-2.5 items-start">
+                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
+                      <p className="leading-tight">Konfirmasi dialog penginstalan yang muncul di layar browser Anda.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2.5 w-full">
+                {deferredPrompt ? (
+                  <button
+                    onClick={handleInstallApp}
+                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-cyan-600/15 flex justify-center items-center gap-2 cursor-pointer border-none text-xs"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    Pasang Sekarang
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleDismissInstall(false)}
+                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all flex justify-center items-center gap-2 cursor-pointer border-none text-xs shadow-lg shadow-cyan-600/15"
+                  >
+                    <Check className="w-4 h-4" />
+                    Saya Mengerti
+                  </button>
+                )}
+
+                <div className="flex gap-2 w-full justify-center text-[11px] font-bold mt-1 text-slate-400">
+                  <button
+                    onClick={() => handleDismissInstall(false)}
+                    className="bg-transparent border-none text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                  >
+                    Nanti Saja
+                  </button>
+                  <span>•</span>
+                  <button
+                    onClick={() => {
+                      handleDismissInstall(true);
+                      showToast('Preferensi disimpan. Anda masih bisa memasangnya lewat menu Profil.', 'info');
+                    }}
+                    className="bg-transparent border-none text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                  >
+                    Jangan Tampilkan Lagi
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
