@@ -86,7 +86,7 @@ export const SupabaseAdapter = {
   },
 
   async getProfile(userId: string): Promise<Profile | null> {
-    if (!isSupabaseConfigured()) return null;
+    if (!isSupabaseConfigured() || !userId) return null;
 
     const { data, error } = await supabase
       .from('profiles')

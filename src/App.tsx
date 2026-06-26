@@ -68,7 +68,8 @@ export default function App() {
     // Put local records in map
     for (const item of local) {
       if (item.dateKey) {
-        mergedMap.set(item.dateKey, item);
+        const key = item.user_id ? `${item.user_id}_${item.dateKey}` : item.dateKey;
+        mergedMap.set(key, item);
       }
     }
 
@@ -76,13 +77,14 @@ export default function App() {
     for (const item of remote) {
       if (!item.dateKey) continue;
 
-      const localItem = mergedMap.get(item.dateKey);
+      const key = item.user_id ? `${item.user_id}_${item.dateKey}` : item.dateKey;
+      const localItem = mergedMap.get(key);
       if (!localItem) {
-        mergedMap.set(item.dateKey, item);
+        mergedMap.set(key, item);
         continue;
       }
 
-      mergedMap.set(item.dateKey, {
+      mergedMap.set(key, {
         ...localItem,
         ...item,
         // Keep local images if remote is empty
@@ -108,9 +110,10 @@ export default function App() {
     if (!navigator.onLine || !isSupabaseConfigured()) return;
 
     try {
-      const activeUser = await SupabaseAdapter.getProfile(
-        localStorage.getItem('smkn1_session_user_id') || ''
-      );
+      const activeUserId = localStorage.getItem('smkn1_session_user_id');
+      if (!activeUserId) return;
+
+      const activeUser = await SupabaseAdapter.getProfile(activeUserId);
 
       if (activeUser) {
         setProfile(activeUser);

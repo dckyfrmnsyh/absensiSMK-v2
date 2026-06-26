@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Search, Eye, FileSpreadsheet, Download, Upload, AlertCircle, CheckCircle, Clock, X, ImageIcon, MapPin } from 'lucide-react';
+import { 
+  Shield, Search, Eye, FileSpreadsheet, Download, Upload, 
+  AlertCircle, CheckCircle, Clock, X, ImageIcon, MapPin,
+  ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight 
+} from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { AttendanceRecord, Profile, AuditLog } from '../types';
 import { StorageService } from '../lib/db';
@@ -22,6 +26,43 @@ export default function AdminTab({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [lightboxPhoto, setLightboxPhoto] = useState<{ src: string; title: string } | null>(null);
+
+  // Drag Scroll Table States
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeftState, setScrollLeftState] = useState(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!tableContainerRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - tableContainerRef.current.offsetLeft);
+    setScrollLeftState(tableContainerRef.current.scrollLeft);
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !tableContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tableContainerRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    tableContainerRef.current.scrollLeft = scrollLeftState - walk;
+  };
+
+  // Datatable Sorting & Pagination States
+  const [sortField, setSortField] = useState<'nama' | 'dateKey' | 'time' | 'status'>('dateKey');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100000);
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [classFilter, setClassFilter] = useState('ALL');
 
   // Excel Export States
   const [exportMonth, setExportMonth] = useState(() => {
@@ -47,17 +88,82 @@ export default function AdminTab({
   // Active record for modal detail
   const activeRecord = records.find(r => r.id === selectedRecordId);
 
-  // Filter records based on search term
+  // Filter records based on search terms and dropdown filters
   const filteredRecords = records.filter(r => {
     const q = searchTerm.toLowerCase();
-    return (
+    
+    const searchMatch = !q || (
       r.nama.toLowerCase().includes(q) ||
       r.nis.toLowerCase().includes(q) ||
       r.kelas.toLowerCase().includes(q) ||
       r.dateKey.includes(q) ||
       r.status.toLowerCase().includes(q)
     );
+
+    const statusMatch = statusFilter === 'ALL' || r.status === statusFilter;
+    const classMatch = classFilter === 'ALL' || r.kelas === classFilter;
+
+    return searchMatch && statusMatch && classMatch;
   });
+
+  // Sort filtered records
+  const sortedRecords = [...filteredRecords].sort((a, b) => {
+    let valA: any = '';
+    let valB: any = '';
+
+    if (sortField === 'nama') {
+      valA = a.nama.toLowerCase();
+      valB = b.nama.toLowerCase();
+    } else if (sortField === 'dateKey') {
+      valA = a.dateKey;
+      valB = b.dateKey;
+    } else if (sortField === 'status') {
+      valA = a.status;
+      valB = b.status;
+    } else if (sortField === 'time') {
+      valA = a.masuk?.time || a.keluar?.time || '';
+      valB = b.masuk?.time || b.keluar?.time || '';
+    }
+
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  // Reset page number when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, classFilter, sortField, sortOrder]);
+
+  const totalItems = sortedRecords.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedRecords = sortedRecords.slice(startIndex, startIndex + pageSize);
+
+  const renderSortHeader = (label: string, field: 'nama' | 'dateKey' | 'time' | 'status') => {
+    const isActive = sortField === field;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (isActive) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+          } else {
+            setSortField(field);
+            setSortOrder('asc');
+          }
+        }}
+        className="flex items-center gap-1 hover:text-cyan-600 transition-colors font-bold uppercase tracking-wider text-[10px] bg-transparent border-none cursor-pointer focus:outline-none text-left"
+      >
+        {label}
+        {isActive ? (
+          sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-cyan-600 inline-block" /> : <ChevronDown className="w-3.5 h-3.5 text-cyan-600 inline-block" />
+        ) : (
+          <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 opacity-60 inline-block" />
+        )}
+      </button>
+    );
+  };
 
   const getStatusStyle = (status: AttendanceRecord['status']) => {
     switch (status) {
@@ -421,76 +527,208 @@ export default function AdminTab({
 
       {/* Validation Panel Card */}
       <div className="bg-white border border-slate-200/80 rounded-3xl overflow-hidden shadow-sm">
-        <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h3 className="text-sm font-black text-slate-850">Validasi Absensi</h3>
+        <div className="p-4 border-b border-slate-100 bg-slate-50 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black text-slate-850">Validasi Absensi</h3>
+              <span className="text-[10px] bg-cyan-100 text-cyan-700 font-extrabold px-2 py-0.5 rounded-full">
+                {totalItems} Data
+              </span>
+            </div>
+            {/* Horizontal Scroll Helper Badge */}
+            <span className="text-[9px] font-bold text-cyan-600 bg-cyan-50 border border-cyan-100 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+              <span>↔ Geser Tabel</span>
+            </span>
+          </div>
           
-          {/* Table Search Bar */}
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white border border-slate-200 hover:border-slate-300 text-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-cyan-100 transition-all"
-              placeholder="Cari siswa, NIS, kelas..."
-            />
+          <div className="grid grid-cols-1 gap-2 md:flex md:items-center">
+            {/* Table Search Bar - Placed prominently as the absolute first item */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-600 w-4 h-4" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-white border border-cyan-200 hover:border-cyan-400 text-slate-800 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold outline-none transition-all shadow-sm shadow-cyan-600/5 placeholder:text-slate-400"
+                placeholder="Cari nama atau NIS siswa..."
+              />
+            </div>
+
+            <div className="flex gap-2">
+              {/* Filter Kelas */}
+              <select
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                className="flex-1 md:flex-initial bg-white border border-slate-200 hover:border-slate-300 text-slate-700 rounded-xl px-2.5 py-2.5 text-xs font-bold outline-none focus:border-cyan-500 transition-colors cursor-pointer min-w-[110px]"
+              >
+                <option value="ALL">Semua Kelas</option>
+                {classList.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+
+              {/* Filter Status */}
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="flex-1 md:flex-initial bg-white border border-slate-200 hover:border-slate-300 text-slate-700 rounded-xl px-2.5 py-2.5 text-xs font-bold outline-none focus:border-cyan-500 transition-colors cursor-pointer min-w-[110px]"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="Pending">Pending</option>
+                <option value="Valid">Valid</option>
+                <option value="Ditolak">Ditolak</option>
+              </select>
+            </div>
           </div>
         </div>
 
         {/* Data Grid / Table */}
-        {filteredRecords.length === 0 ? (
+        {paginatedRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs font-semibold">
-            Tidak ada data absensi yang sesuai pencarian.
+            Tidak ada data absensi yang sesuai pencarian atau filter.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs whitespace-nowrap">
-              <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="px-4 py-3">Nama Siswa / NIS</th>
-                  <th className="px-4 py-3">Tanggal Absen</th>
-                  <th className="px-4 py-3">Waktu Masuk-Keluar</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredRecords.map((r) => {
-                  const checkin = r.masuk?.time || '--:--';
-                  const checkout = r.keluar?.time || '--:--';
-                  return (
-                    <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3.5">
-                        <p className="font-extrabold text-slate-800">{r.nama}</p>
-                        <p className="text-[10px] font-bold text-slate-400 mt-0.5">{r.kelas} • NIS: {r.nis}</p>
-                      </td>
-                      <td className="px-4 py-3.5 font-bold text-slate-700">
-                        {formatDateLabel(r.dateKey)}
-                      </td>
-                      <td className="px-4 py-3.5 font-extrabold text-slate-700">
-                        {checkin} - {checkout}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${getStatusStyle(r.status)}`}>
-                          {getStatusIcon(r.status)}
-                          {r.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-center">
-                        <button
-                           onClick={() => setSelectedRecordId(r.id)}
-                           className="bg-slate-100 hover:bg-slate-200 text-cyan-600 px-3 py-1.5 rounded-xl font-bold border border-slate-200 transition-colors flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Detail
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Fully swipeable/drag-scrollable table frame with visible scrollbars and indicators */}
+            <div 
+              ref={tableContainerRef}
+              onMouseDown={handleMouseDown}
+              onMouseLeave={handleMouseLeave}
+              onMouseUp={handleMouseUp}
+              onMouseMove={handleMouseMove}
+              className="overflow-x-auto select-none cursor-grab active:cursor-grabbing pb-2 transition-all duration-150 scroll-smooth focus:outline-none"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <table className="w-full text-left text-xs whitespace-nowrap table-auto min-w-[650px]">
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">{renderSortHeader('Nama Siswa / NIS', 'nama')}</th>
+                    <th className="px-4 py-3">{renderSortHeader('Tanggal Absen', 'dateKey')}</th>
+                    <th className="px-4 py-3">{renderSortHeader('Waktu Masuk-Keluar', 'time')}</th>
+                    <th className="px-4 py-3">{renderSortHeader('Status', 'status')}</th>
+                    <th className="px-4 py-3 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedRecords.map((r) => {
+                    const checkin = r.masuk?.time || '--:--';
+                    const checkout = r.keluar?.time || '--:--';
+                    return (
+                      <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3.5">
+                          <p className="font-extrabold text-slate-800">{r.nama}</p>
+                          <p className="text-[10px] font-bold text-slate-400 mt-0.5">{r.kelas} • NIS: {r.nis}</p>
+                        </td>
+                        <td className="px-4 py-3.5 font-bold text-slate-700">
+                          {formatDateLabel(r.dateKey)}
+                        </td>
+                        <td className="px-4 py-3.5 font-extrabold text-slate-700">
+                          {checkin} - {checkout}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${getStatusStyle(r.status)}`}>
+                            {getStatusIcon(r.status)}
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-center animate-fade-in">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRecordId(r.id)}
+                            className="bg-slate-100 hover:bg-slate-200 text-cyan-600 px-3 py-1.5 rounded-xl font-bold border border-slate-200 transition-colors flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Detail
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 font-semibold">
+              {/* Page Size & Record Counts */}
+              <div className="flex items-center gap-3">
+                <span>Tampilkan</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 rounded-lg px-2 py-1 text-xs font-bold outline-none focus:border-cyan-500 cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={100000}>Semua</option>
+                </select>
+                <span>
+                  {pageSize >= 100000 ? (
+                    <>Menampilkan semua <strong className="text-slate-700">{totalItems}</strong> data</>
+                  ) : (
+                    <>
+                      Menampilkan <strong className="text-slate-700">{totalItems === 0 ? 0 : startIndex + 1}</strong> - <strong className="text-slate-700">{Math.min(startIndex + pageSize, totalItems)}</strong> dari <strong className="text-slate-700">{totalItems}</strong> data
+                    </>
+                  )}
+                </span>
+              </div>
+
+              {/* Page Navigation Buttons */}
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:hover:bg-white active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  {/* Page Numbers */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(page => {
+                      return page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
+                    })
+                    .map((page, index, array) => {
+                      const isSelected = currentPage === page;
+                      const showEllipsis = index > 0 && page - array[index - 1] > 1;
+
+                      return (
+                        <React.Fragment key={page}>
+                          {showEllipsis && <span className="px-1.5 text-slate-400">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(page)}
+                            className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/10 border-none'
+                                : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-700'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+
+                  <button
+                    type="button"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:hover:bg-white active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 

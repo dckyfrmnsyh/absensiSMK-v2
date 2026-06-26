@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapPin, User, LogIn, LogOut, CheckCircle, Clock, CloudUpload, RefreshCw, Camera, X } from 'lucide-react';
+import { MapPin, User, LogIn, LogOut, CheckCircle, Clock, CloudUpload, RefreshCw, Camera, X, Monitor, Smartphone, AlertTriangle } from 'lucide-react';
 import { Profile, AttendanceRecord, LocationData } from '../types';
 
 interface HomeTabProps {
@@ -26,6 +26,18 @@ export default function HomeTab({
   const [modalOpen, setModalOpen] = useState(false);
   const [absenType, setAbsenType] = useState<'masuk' | 'keluar'>('masuk');
   
+  // Desktop prohibition and device detection state
+  const [isDesktopDevice, setIsDesktopDevice] = useState(false);
+  const [desktopWarningOpen, setDesktopWarningOpen] = useState(false);
+
+  useEffect(() => {
+    const checkDevice = () => {
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(navigator.userAgent);
+      setIsDesktopDevice(!isMobileDevice);
+    };
+    checkDevice();
+  }, []);
+
   // Camera & Location state
   const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -170,6 +182,10 @@ export default function HomeTab({
   };
 
   const handleOpenAbsenModal = (type: 'masuk' | 'keluar') => {
+    if (isDesktopDevice) {
+      setDesktopWarningOpen(true);
+      return;
+    }
     if (type === 'masuk' && sudahMasuk) {
       showToast('Anda sudah absen masuk hari ini', 'warning');
       return;
@@ -442,6 +458,56 @@ export default function HomeTab({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Laptop/PC Attendance Restriction Warning Modal */}
+      {desktopWarningOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex justify-center items-center backdrop-blur-sm p-4">
+          <div className="bg-white border border-slate-200/80 w-full max-w-md rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="relative w-16 h-16 bg-red-50 border border-red-150 rounded-2xl flex justify-center items-center mb-4 shadow-md">
+              <Monitor className="w-8 h-8 text-red-600" />
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center font-bold text-xs shadow-md border-2 border-white">
+                !
+              </div>
+            </div>
+
+            <h3 className="font-black text-slate-850 text-lg mb-2 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+              Absensi via Laptop/PC Dilarang
+            </h3>
+            
+            <p className="text-xs text-slate-500 font-semibold mb-6 leading-relaxed">
+              Demi menjaga validitas data, kesesuaian lokasi GPS, dan dokumentasi foto kamera yang riil, siswa <span className="text-red-600 font-extrabold">tidak diperbolehkan</span> melakukan absensi menggunakan Laptop, PC, atau komputer tablet desktop.
+            </p>
+
+            <div className="w-full bg-slate-50 border border-slate-150 rounded-2xl p-4 mb-5 text-left text-xs text-slate-600 space-y-3 font-semibold">
+              <p className="text-center text-cyan-600 font-extrabold pb-1">Panduan Penggunaan:</p>
+              <div className="flex gap-2.5 items-start">
+                <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
+                <p>Silakan buka sistem absensi ini di browser perangkat <span className="text-cyan-600 font-bold">Smartphone / HP</span> Anda.</p>
+              </div>
+              <div className="flex gap-2.5 items-start">
+                <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
+                <p>Masuk menggunakan NIS siswa yang telah terdaftar.</p>
+              </div>
+              <div className="flex gap-2.5 items-start">
+                <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
+                <p>Lakukan absen masuk atau absen keluar dengan kamera dan GPS HP Anda.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => setDesktopWarningOpen(false)}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-slate-800/10 flex justify-center items-center gap-2 cursor-pointer border-none text-xs"
+              >
+                <Smartphone className="w-4 h-4" />
+                Saya Mengerti, Beralih ke HP
+              </button>
+            </div>
           </div>
         </div>
       )}

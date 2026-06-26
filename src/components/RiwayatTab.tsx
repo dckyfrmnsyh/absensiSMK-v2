@@ -73,13 +73,13 @@ export default function RiwayatTab({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-black text-slate-800">Riwayat Absensi</h2>
         <div className="flex flex-wrap gap-2">
-          <button
+          {/* <button
             onClick={onExportBackup}
             className="flex items-center gap-1.5 text-xs bg-white text-cyan-600 font-bold border border-cyan-200 rounded-xl px-3 py-2 hover:bg-cyan-50/50 shadow-sm active:scale-[0.98] transition-all duration-150 cursor-pointer"
           >
             <Download className="w-4 h-4" />
             Ekspor
-          </button>
+          </button> */}
           <button
             onClick={() => setMonthPickerOpen(true)}
             className="flex items-center gap-1.5 text-xs bg-white text-emerald-600 font-bold border border-emerald-200 rounded-xl px-3 py-2 hover:bg-emerald-50/50 shadow-sm active:scale-[0.98] transition-all duration-150 cursor-pointer"
@@ -87,13 +87,13 @@ export default function RiwayatTab({
             <FileText className="w-4 h-4" />
             PDF Bulanan
           </button>
-          <button
+          {/* <button
             onClick={onResetData}
             className="flex items-center gap-1.5 text-xs bg-white text-red-600 font-bold border border-red-200 rounded-xl px-3 py-2 hover:bg-red-50/50 shadow-sm active:scale-[0.98] transition-all duration-150 cursor-pointer"
           >
             <Trash2 className="w-4 h-4" />
             Reset
-          </button>
+          </button> */}
         </div>
       </div>
 

@@ -197,8 +197,8 @@ export default function Login({ onLoginSuccess, showToast }: LoginProps) {
         <div className="mt-8 bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center text-xs text-slate-600 font-semibold">
           <p className="leading-relaxed">
             {role === 'siswa'
-              ? 'Siswa menggunakan NIS masing-masing sebagai username. Untuk akun demo ketik NIS 12345678.'
-              : 'Admin panel digunakan untuk validasi absensi, impor data, dan rekap laporan bulanan.'}
+              ? 'Siswa menggunakan NIS masing-masing sebagai username. '
+              : 'Admin panel hanya untuk admin sekolah.'}
           </p>
         </div>
       </div>
