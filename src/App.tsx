@@ -675,7 +675,7 @@ export default function App() {
         </div>
 
         <div class="document">
-          <div class="header-title">LAPORAN REKAPITULASI ABSENSI PKL SISWA</div>
+          <div class="header-title">LAPORAN REKAPITULASI ABSENSI PKL SISWA <br> SMK Negeri 1 Tana Tidung</div>
 
           <table class="info-table">
             <tr><td>Nama Lengkap</td><td>:</td><td>${profile.nama}</td></tr>
