@@ -1,4 +1,4 @@
-const CACHE_NAME = 'absensi-pkl-v1';
+const CACHE_NAME = 'absensi-pkl-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -34,17 +34,61 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Let network first / cache fallback handle asset delivery
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).catch(() => {
-        // Return fallback if needed or simply let it fail
-      });
-    })
-  );
+  const url = new URL(event.request.url);
+
+  // Bypass service worker entirely for API requests and Supabase requests
+  if (
+    url.pathname.startsWith('/api') || 
+    url.pathname.startsWith('/supabase') || 
+    url.host.includes('supabase.co')
+  ) {
+    return; // Let browser execute standard network fetch directly
+  }
+
+  // Check if it's a navigation or HTML request (e.g. index.html or root page)
+  const isHtmlRequest = event.request.mode === 'navigate' || 
+                        (event.request.method === 'GET' && 
+                         event.request.headers.get('accept') && 
+                         event.request.headers.get('accept').includes('text/html'));
+
+  if (isHtmlRequest) {
+    // Network-First strategy for HTML files to avoid old index.html caching
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Fallback to cache if network is unavailable
+          return caches.match(event.request);
+        })
+    );
+  } else {
+    // Cache-First strategy for general static assets (JS bundles, CSS, images)
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((response) => {
+          // If it is a local request (not external), cache it dynamically if appropriate
+          if (url.origin === self.location.origin && response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        }); // Let error propagate naturally to browser/app retry mechanism if it fails and is not cached
+      })
+    );
+  }
 });
 
 // Sync request listener for service worker

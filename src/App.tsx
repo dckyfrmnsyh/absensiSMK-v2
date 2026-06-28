@@ -242,6 +242,51 @@ export default function App() {
   useEffect(() => {
     checkAuth();
 
+    // -------------------------------------------------------------------------
+    // Auto-update checking mechanism
+    // -------------------------------------------------------------------------
+    let initialVersion: string | null = null;
+    
+    const checkAppVersion = async (isInitialCheck = false) => {
+      try {
+        const response = await fetch('/api/version');
+        if (!response.ok) return;
+        const data = await response.json();
+        
+        if (isInitialCheck) {
+          initialVersion = data.version;
+          localStorage.setItem('app_version', data.version);
+        } else {
+          const savedVersion = localStorage.getItem('app_version') || initialVersion;
+          if (savedVersion && data.version && savedVersion !== data.version) {
+            console.log('[VersionControl] Versi server baru terdeteksi:', data.version);
+            localStorage.setItem('app_version', data.version);
+            showToast('Pembaruan sistem terdeteksi! Memperbarui halaman...', 'info');
+            
+            // Clean up caches for clean load
+            if ('caches' in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map(key => caches.delete(key)));
+            }
+            
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          }
+        }
+      } catch (err) {
+        console.warn('[VersionControl] Gagal memeriksa versi server:', err);
+      }
+    };
+
+    // Initial check
+    checkAppVersion(true);
+
+    // Check version every 5 minutes
+    const versionCheckInterval = setInterval(() => {
+      checkAppVersion();
+    }, 300000);
+
     // Event listener connection monitoring
     const handleOnline = () => {
       setIsOnline(true);
@@ -271,9 +316,33 @@ export default function App() {
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt as any);
 
-    // Focus triggers auto sync
-    const handleFocus = () => runSync();
+    // Focus triggers auto sync and version check
+    const handleFocus = () => {
+      runSync();
+      checkAppVersion();
+    };
     window.addEventListener('focus', handleFocus);
+
+    // Vite dynamic chunk preload error handler
+    const handlePreloadError = (e: Event) => {
+      console.warn('[Vite] Preload error detected (chunk failed). Reloading page for new assets...', e);
+      window.location.reload();
+    };
+    window.addEventListener('vite:preloadError', handlePreloadError);
+
+    // General script/chunk loading error fallback (e.g. if old assets no longer exist)
+    const handleGlobalError = (e: ErrorEvent) => {
+      const isChunkError = e.message && (
+        e.message.includes('Loading chunk') || 
+        e.message.includes('Importing a module script failed') ||
+        e.message.includes('failed to fetch dynamically imported module')
+      );
+      if (isChunkError) {
+        console.warn('[GlobalError] Chunk loading error detected. Reloading page...', e);
+        window.location.reload();
+      }
+    };
+    window.addEventListener('error', handleGlobalError);
 
     // Ask for Notification permission on startup/login
     if ('Notification' in window && Notification.permission === 'default') {
@@ -321,6 +390,24 @@ export default function App() {
       navigator.serviceWorker.register('/service-worker.js')
         .then((reg) => {
           console.log('[ServiceWorker] Berhasil didaftarkan:', reg.scope);
+          
+          // Check for Service Worker updates
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === 'installed') {
+                  if (navigator.serviceWorker.controller) {
+                    console.log('[ServiceWorker] Pembaruan baru tersedia. Memuat ulang...');
+                    showToast('Sistem diperbarui ke versi terbaru. Memuat ulang halaman...', 'info');
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 2000);
+                  }
+                }
+              };
+            }
+          };
         })
         .catch((err) => {
           console.warn('[ServiceWorker] Gagal registrasi:', err);
@@ -340,7 +427,10 @@ export default function App() {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as any);
+      window.removeEventListener('vite:preloadError', handlePreloadError);
+      window.removeEventListener('error', handleGlobalError);
       clearInterval(clientCheckInterval);
+      clearInterval(versionCheckInterval);
       if (handleSwMessage && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       }
@@ -363,13 +453,21 @@ export default function App() {
     const cachedRecords = StorageService.getRecords();
     let record = cachedRecords.find((r) => r.dateKey === dateKey && r.user_id === userId);
 
+    // Compress and resize the photo (max 800px, quality 70%) before queueing and saving
+    let processedPhoto = photoBase64;
+    try {
+      processedPhoto = await compressAndResizeImage(photoBase64, 800, 0.7);
+    } catch (err) {
+      console.warn('[Compression] Error compressing image:', err);
+    }
+
     const entryDetail = {
       type,
       time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       isoTime: now.toISOString(),
       location,
       locationText,
-      photo: photoBase64,
+      photo: processedPhoto,
       createdAt: now.toISOString()
     };
 
@@ -675,7 +773,7 @@ export default function App() {
         </div>
 
         <div class="document">
-          <div class="header-title">LAPORAN REKAPITULASI ABSENSI PKL SISWA <br> SMK Negeri 1 Tana Tidung</div>
+          <div class="header-title">LAPORAN REKAPITULASI ABSENSI PKL SISWA</div>
 
           <table class="info-table">
             <tr><td>Nama Lengkap</td><td>:</td><td>${profile.nama}</td></tr>
@@ -1117,3 +1215,55 @@ export default function App() {
     </div>
   );
 }
+
+// Helper function to compress and resize base64 images before saving/syncing
+function compressAndResizeImage(
+  base64Str: string,
+  maxWidthOrHeight = 800,
+  quality = 0.7
+): Promise<string> {
+  return new Promise((resolve) => {
+    if (!base64Str || !base64Str.startsWith('data:image/')) {
+      return resolve(base64Str);
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      // Calculate resizing with aspect ratio
+      if (width > maxWidthOrHeight || height > maxWidthOrHeight) {
+        if (width > height) {
+          height = Math.round((height * maxWidthOrHeight) / width);
+          width = maxWidthOrHeight;
+        } else {
+          width = Math.round((width * maxWidthOrHeight) / height);
+          height = maxWidthOrHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return resolve(base64Str);
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Export as compressed JPEG
+      const compressed = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressed);
+    };
+
+    img.onerror = () => {
+      resolve(base64Str); // Fallback to original image on loading error
+    };
+
+    img.src = base64Str;
+  });
+}
+
