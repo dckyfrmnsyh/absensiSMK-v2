@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Clock, User, Shield, GraduationCap, ClipboardCheck, Download, Smartphone, Share, Plus, Monitor, X, Check } from 'lucide-react';
+import { Home, Clock, User, Shield, GraduationCap, ClipboardCheck, Download, Smartphone, Share, Plus, Monitor, X, Check,ClipboardList  } from 'lucide-react';
 import Header from './components/Header';
 import HomeTab from './components/HomeTab';
 import RiwayatTab from './components/RiwayatTab';
 import ProfilTab from './components/ProfilTab';
 import AdminTab from './components/AdminTab';
 import Login from './components/Login';
+import LaporanHarianSiswaTab from './components/LaporanHarianSiswaTab';
 import Toast, { ToastMessage } from './components/Toast';
 import { Profile, AttendanceRecord, QueueItem, LocationData, AuditLog } from './types';
 import { isSupabaseConfigured, SupabaseAdapter } from './lib/supabase';
@@ -20,7 +21,7 @@ export default function App() {
   // App States
   const [profile, setProfile] = useState<Profile>(StorageService.getProfile());
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'home' | 'riwayat' | 'profil' | 'admin'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'riwayat' | 'profil' | 'laporan' | 'admin'>('home');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncStats, setSyncStats] = useState({ pending: 0, total: 0, failedFinal: 0 });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -972,248 +973,326 @@ export default function App() {
   const isStandalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-slate-100 font-sans">
-      <div className="w-full max-w-md h-[100dvh] bg-gray-50 relative shadow-2xl flex flex-col overflow-hidden sm:rounded-3xl sm:h-[90vh] sm:border border-gray-250">
-        
-        {/* Header */}
-        <Header onLogout={handleLogout} />
+  <div className="flex justify-center items-center min-h-screen bg-slate-100 font-sans">
+    <div className="w-full max-w-md h-[100dvh] bg-gray-50 relative shadow-2xl flex flex-col overflow-hidden sm:rounded-3xl sm:h-[90vh] sm:border border-gray-250">
+      
+      {/* Header */}
+      <Header onLogout={handleLogout} />
 
-        {/* Tabs Panels Display Wrapper */}
-        <main className="flex-1 overflow-y-auto pb-24 relative bg-gray-50 p-4">
-          {activeTab === 'home' && (
-            <HomeTab
-              profile={profile}
-              todayRecord={todayRecord}
-              records={records}
-              onAbsenSubmit={handleAbsenSubmit}
-              syncStats={syncStats}
-              isOnline={isOnline}
-              onTriggerSync={runSync}
-              showToast={showToast}
-            />
-          )}
+      {/* Tabs Panels Display Wrapper */}
+      <main className="flex-1 overflow-y-auto pb-24 relative bg-gray-50 p-4">
+        {activeTab === 'home' && (
+          <HomeTab
+            profile={profile}
+            todayRecord={todayRecord}
+            records={records}
+            onAbsenSubmit={handleAbsenSubmit}
+            syncStats={syncStats}
+            isOnline={isOnline}
+            onTriggerSync={runSync}
+            showToast={showToast}
+          />
+        )}
 
-          {activeTab === 'riwayat' && (
-            <RiwayatTab
-              records={records}
-              onExportBackup={handleExportBackup}
-              onResetData={handleResetData}
-              onGeneratePdf={handleGeneratePdf}
-            />
-          )}
+        {activeTab === 'riwayat' && (
+          <RiwayatTab
+            records={records}
+            onExportBackup={handleExportBackup}
+            onResetData={handleResetData}
+            onGeneratePdf={handleGeneratePdf}
+          />
+        )}
 
-          {activeTab === 'profil' && (
-            <ProfilTab
-              profile={profile}
-              onSaveProfile={handleSaveProfile}
-              showToast={showToast}
-              onTriggerInstall={() => setShowInstallModal(true)}
-            />
-          )}
+        {activeTab === 'profil' && (
+          <ProfilTab
+            profile={profile}
+            onSaveProfile={handleSaveProfile}
+            showToast={showToast}
+            onTriggerInstall={() => setShowInstallModal(true)}
+          />
+        )}
 
-          {activeTab === 'admin' && userRole === 'admin' && (
-            <AdminTab
-              records={records}
-              onValidateRecord={handleValidateRecord}
-              isOnline={isOnline}
-              showToast={showToast}
-            />
-          )}
-        </main>
+        {activeTab === 'laporan' && (
+          <LaporanHarianSiswaTab profile={profile} showToast={showToast} />
+        )}
 
-        {/* Footer Navigation Bar */}
-        <nav className="absolute bottom-0 w-full bg-white border-t border-gray-150 flex justify-around items-center pb-safe pt-2.5 pb-2.5 z-20 shadow-lg">
-          {userRole !== 'admin' ? (
-            <>
+        {activeTab === 'admin' && userRole === 'admin' && (
+          <AdminTab
+            records={records}
+            onValidateRecord={handleValidateRecord}
+            isOnline={isOnline}
+            showToast={showToast}
+          />
+        )}
+      </main>
+
+      {/* Footer Navigation Bar */}
+      <nav className="absolute bottom-0 w-full bg-white border-t border-gray-150 flex justify-around items-center pb-safe pt-2.5 pb-2.5 z-20 shadow-lg">
+        {userRole !== 'admin' ? (
+          <>
+            <button
+              onClick={() => setActiveTab('home')}
+              className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'home'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Home className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Home</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('riwayat')}
+              className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'riwayat'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Clock className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Riwayat</span>
+            </button>
+
+            {/* ✅ TAMBAHAN: Tombol Laporan untuk non-admin */}
+            <button
+              onClick={() => setActiveTab('laporan')}
+              className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'laporan'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <ClipboardList className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Laporan</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('profil')}
+              className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'profil'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <User className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Profil</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setActiveTab('laporan')}
+              className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'laporan'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <ClipboardList className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Laporan</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`flex flex-col items-center w-24 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'admin'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Shield className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Admin Panel</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('profil')}
+              className={`flex flex-col items-center w-24 bg-transparent border-none cursor-pointer transition-colors ${
+                activeTab === 'profil'
+                  ? 'text-blue-900 font-bold'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <User className="w-5.5 h-5.5 mb-1" />
+              <span className="text-[10px]">Profil</span>
+            </button>
+          </>
+        )}
+      </nav>
+
+      {/* Global Toast Overlay Container */}
+      <Toast toasts={toasts} removeToast={removeToast} />
+
+      {/* Custom Confirmation Dialog Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200/80 w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+            <h3 className="font-extrabold text-slate-800 text-base mb-2">
+              {confirmModal.title}
+            </h3>
+            <p className="text-xs text-slate-500 font-bold mb-6 leading-relaxed">
+              {confirmModal.message}
+            </p>
+            <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setActiveTab('home')}
-                className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
-                  activeTab === 'home' ? 'text-blue-900 font-bold' : 'text-gray-400 hover:text-gray-600'
-                }`}
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-755 bg-slate-100 hover:bg-slate-200 border border-slate-200 cursor-pointer transition-colors"
               >
-                <Home className="w-5.5 h-5.5 mb-1" />
-                <span className="text-[10px]">Home</span>
+                {confirmModal.cancelText || 'Batal'}
               </button>
               <button
-                onClick={() => setActiveTab('riwayat')}
-                className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
-                  activeTab === 'riwayat' ? 'text-blue-900 font-bold' : 'text-gray-400 hover:text-gray-600'
-                }`}
+                onClick={() => {
+                  confirmModal.onConfirm();
+                  setConfirmModal(null);
+                }}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 cursor-pointer transition-colors"
               >
-                <Clock className="w-5.5 h-5.5 mb-1" />
-                <span className="text-[10px]">Riwayat</span>
+                {confirmModal.confirmText || 'Konfirmasi'}
               </button>
-              <button
-                onClick={() => setActiveTab('profil')}
-                className={`flex flex-col items-center w-16 bg-transparent border-none cursor-pointer transition-colors ${
-                  activeTab === 'profil' ? 'text-blue-900 font-bold' : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <User className="w-5.5 h-5.5 mb-1" />
-                <span className="text-[10px]">Profil</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setActiveTab('admin')}
-                className={`flex flex-col items-center w-24 bg-transparent border-none cursor-pointer transition-colors ${
-                  activeTab === 'admin' ? 'text-blue-900 font-bold' : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <Shield className="w-5.5 h-5.5 mb-1" />
-                <span className="text-[10px]">Admin Panel</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('profil')}
-                className={`flex flex-col items-center w-24 bg-transparent border-none cursor-pointer transition-colors ${
-                  activeTab === 'profil' ? 'text-blue-900 font-bold' : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <User className="w-5.5 h-5.5 mb-1" />
-                <span className="text-[10px]">Profil</span>
-              </button>
-            </>
-          )}
-        </nav>
+            </div>
+          </div>
+        </div>
+      )}
 
-        {/* Global Toast Overlay Container */}
-        <Toast toasts={toasts} removeToast={removeToast} />
+      {/* PWA Install Modal Dialog */}
+      {showInstallModal && !isStandalone && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200/80 w-full max-w-sm rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center">
+            
+            {/* Logo / Icon */}
+            <div className="w-16 h-16 bg-white border border-slate-250/70 rounded-2xl flex justify-center items-center mb-4 shadow-md p-1.5">
+              <img 
+                src="/logo.png" 
+                alt="Logo SMK" 
+                className="w-full h-full object-contain" 
+                referrerPolicy="no-referrer" 
+              />
+            </div>
 
-        {/* Custom Confirmation Dialog Modal */}
-        {confirmModal && (
-          <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white border border-slate-200/80 w-full max-w-sm rounded-3xl p-6 shadow-2xl">
-              <h3 className="font-extrabold text-slate-800 text-base mb-2">{confirmModal.title}</h3>
-              <p className="text-xs text-slate-500 font-bold mb-6 leading-relaxed">
-                {confirmModal.message}
-              </p>
-              <div className="flex gap-3 justify-end">
+            <h3 className="font-extrabold text-slate-800 text-lg mb-1 leading-tight">
+              Pasang Aplikasi Absensi
+            </h3>
+            <p className="text-[11px] font-bold text-slate-400 mb-5">
+              SMK Negeri 1 Tana Tidung
+            </p>
+
+            <div className="text-left w-full bg-slate-50 border border-slate-150 rounded-2xl p-4 mb-5 text-xs text-slate-600 font-bold space-y-3">
+              {deferredPrompt ? (
+                <p className="text-center text-slate-500 leading-relaxed py-2">
+                  Ingin memasang aplikasi di layar utama perangkat Anda untuk akses offline cepat?
+                </p>
+              ) : isIOS ? (
+                <div className="space-y-2">
+                  <p className="text-center text-cyan-600 font-extrabold pb-1">
+                    Panduan Pemasangan iOS / Safari:
+                  </p>
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
+                    <p className="leading-tight">
+                      Ketuk ikon{" "}
+                      <span className="inline-flex items-center align-middle justify-center p-1 bg-white border border-slate-200 rounded-md text-slate-700 mx-0.5">
+                        <Share className="w-3.5 h-3.5" />
+                      </span>{" "}
+                      <strong>Bagikan (Share)</strong> di menu bawah Safari.
+                    </p>
+                  </div>
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
+                    <p className="leading-tight">
+                      Gulir ke bawah dan ketuk opsi{" "}
+                      <span className="inline-flex items-center align-middle justify-center p-1 bg-white border border-slate-200 rounded-md text-slate-700 mx-0.5">
+                        <Plus className="w-3.5 h-3.5" />
+                      </span>{" "}
+                      <strong>Tambahkan ke Layar Utama</strong>.
+                    </p>
+                  </div>
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
+                    <p className="leading-tight">
+                      Ketuk tombol <strong>Tambah</strong> di pojok kanan atas layar.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-center text-cyan-600 font-extrabold pb-1">
+                    Panduan Pemasangan Manual:
+                  </p>
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
+                    <p className="leading-tight">
+                      Klik tombol menu{" "}
+                      <span className="font-extrabold text-slate-800">titik tiga (⋮)</span> di pojok kanan atas browser.
+                    </p>
+                  </div>
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
+                    <p className="leading-tight">
+                      Pilih menu{" "}
+                      <span className="font-extrabold text-slate-800">"Instal Aplikasi"</span> atau{" "}
+                      <span className="font-extrabold text-slate-800">"Tambahkan ke Layar Utama"</span>.
+                    </p>
+                  </div>
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
+                    <p className="leading-tight">
+                      Konfirmasi dialog penginstalan yang muncul di layar browser Anda.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-2.5 w-full">
+              {deferredPrompt ? (
                 <button
-                  onClick={() => setConfirmModal(null)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-755 bg-slate-100 hover:bg-slate-200 border border-slate-200 cursor-pointer transition-colors"
+                  onClick={handleInstallApp}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-cyan-600/15 flex justify-center items-center gap-2 cursor-pointer border-none text-xs"
                 >
-                  {confirmModal.cancelText || 'Batal'}
+                  <Smartphone className="w-4 h-4" />
+                  Pasang Sekarang
                 </button>
+              ) : (
+                <button
+                  onClick={() => handleDismissInstall(false)}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all flex justify-center items-center gap-2 cursor-pointer border-none text-xs shadow-lg shadow-cyan-600/15"
+                >
+                  <Check className="w-4 h-4" />
+                  Saya Mengerti
+                </button>
+              )}
+
+              <div className="flex gap-2 w-full justify-center text-[11px] font-bold mt-1 text-slate-400">
+                <button
+                  onClick={() => handleDismissInstall(false)}
+                  className="bg-transparent border-none text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                >
+                  Nanti Saja
+                </button>
+                <span>•</span>
                 <button
                   onClick={() => {
-                    confirmModal.onConfirm();
-                    setConfirmModal(null);
+                    handleDismissInstall(true);
+                    showToast(
+                      'Preferensi disimpan. Anda masih bisa memasangnya lewat menu Profil.',
+                      'info'
+                    );
                   }}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 cursor-pointer transition-colors"
+                  className="bg-transparent border-none text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
                 >
-                  {confirmModal.confirmText || 'Konfirmasi'}
+                  Jangan Tampilkan Lagi
                 </button>
               </div>
             </div>
+
           </div>
-        )}
+        </div>
+      )}
 
-        {/* PWA Install Modal Dialog */}
-        {showInstallModal && !isStandalone && (
-          <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white border border-slate-200/80 w-full max-w-sm rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center">
-              
-              {/* Logo / Icon */}
-              <div className="w-16 h-16 bg-white border border-slate-250/70 rounded-2xl flex justify-center items-center mb-4 shadow-md p-1.5">
-                <img 
-                  src="/logo.png" 
-                  alt="Logo SMK" 
-                  className="w-full h-full object-contain" 
-                  referrerPolicy="no-referrer" 
-                />
-              </div>
-
-              <h3 className="font-extrabold text-slate-800 text-lg mb-1 leading-tight">Pasang Aplikasi Absensi</h3>
-              <p className="text-[11px] font-bold text-slate-400 mb-5">SMK Negeri 1 Tana Tidung</p>
-
-              <div className="text-left w-full bg-slate-50 border border-slate-150 rounded-2xl p-4 mb-5 text-xs text-slate-600 font-bold space-y-3">
-                {deferredPrompt ? (
-                  <p className="text-center text-slate-500 leading-relaxed py-2">
-                    Ingin memasang aplikasi di layar utama perangkat Anda untuk akses offline cepat?
-                  </p>
-                ) : isIOS ? (
-                  <div className="space-y-2">
-                    <p className="text-center text-cyan-600 font-extrabold pb-1">Panduan Pemasangan iOS / Safari:</p>
-                    <div className="flex gap-2.5 items-start">
-                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
-                      <p className="leading-tight">Ketuk ikon <span className="inline-flex items-center align-middle justify-center p-1 bg-white border border-slate-200 rounded-md text-slate-700 mx-0.5"><Share className="w-3.5 h-3.5" /></span> <strong>Bagikan (Share)</strong> di menu bawah Safari.</p>
-                    </div>
-                    <div className="flex gap-2.5 items-start">
-                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
-                      <p className="leading-tight">Gulir ke bawah dan ketuk opsi <span className="inline-flex items-center align-middle justify-center p-1 bg-white border border-slate-200 rounded-md text-slate-700 mx-0.5"><Plus className="w-3.5 h-3.5" /></span> <strong>Tambahkan ke Layar Utama</strong>.</p>
-                    </div>
-                    <div className="flex gap-2.5 items-start">
-                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
-                      <p className="leading-tight">Ketuk tombol <strong>Tambah</strong> di pojok kanan atas layar.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-center text-cyan-600 font-extrabold pb-1">Panduan Pemasangan Manual:</p>
-                    <div className="flex gap-2.5 items-start">
-                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
-                      <p className="leading-tight">Klik tombol menu <span className="font-extrabold text-slate-800">titik tiga (⋮)</span> di pojok kanan atas browser.</p>
-                    </div>
-                    <div className="flex gap-2.5 items-start">
-                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
-                      <p className="leading-tight">Pilih menu <span className="font-extrabold text-slate-800">"Instal Aplikasi"</span> atau <span className="font-extrabold text-slate-800">"Tambahkan ke Layar Utama"</span>.</p>
-                    </div>
-                    <div className="flex gap-2.5 items-start">
-                      <div className="w-5 h-5 bg-cyan-100 text-cyan-600 text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
-                      <p className="leading-tight">Konfirmasi dialog penginstalan yang muncul di layar browser Anda.</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-2.5 w-full">
-                {deferredPrompt ? (
-                  <button
-                    onClick={handleInstallApp}
-                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-cyan-600/15 flex justify-center items-center gap-2 cursor-pointer border-none text-xs"
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    Pasang Sekarang
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleDismissInstall(false)}
-                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all flex justify-center items-center gap-2 cursor-pointer border-none text-xs shadow-lg shadow-cyan-600/15"
-                  >
-                    <Check className="w-4 h-4" />
-                    Saya Mengerti
-                  </button>
-                )}
-
-                <div className="flex gap-2 w-full justify-center text-[11px] font-bold mt-1 text-slate-400">
-                  <button
-                    onClick={() => handleDismissInstall(false)}
-                    className="bg-transparent border-none text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
-                  >
-                    Nanti Saja
-                  </button>
-                  <span>•</span>
-                  <button
-                    onClick={() => {
-                      handleDismissInstall(true);
-                      showToast('Preferensi disimpan. Anda masih bisa memasangnya lewat menu Profil.', 'info');
-                    }}
-                    className="bg-transparent border-none text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
-                  >
-                    Jangan Tampilkan Lagi
-                  </button>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-      </div>
     </div>
-  );
+  </div>
+);
 }
 
 // Helper function to compress and resize base64 images before saving/syncing

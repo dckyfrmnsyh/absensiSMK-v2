@@ -84,3 +84,17 @@ export interface QueueItem {
   createdAt: number;
   updatedAt: number;
 }
+export type LaporanHarianEntry = {
+  id: string;
+  date: string;   // YYYY-MM-DD
+  start: string;  // HH:mm
+  end: string;    // HH:mm
+  uraian: string;
+};
+
+export type LaporanHarianProfileMeta = {
+  namaSiswa: string;
+  nis: string;
+  kelas: string;
+  tempatPkl?: string;
+};

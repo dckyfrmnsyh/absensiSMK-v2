@@ -124,8 +124,9 @@ export default function HomeTab({
 
     if (!navigator.geolocation) {
       setGpsError('Geolocation tidak didukung oleh browser ini.');
-      setLocationText('GPS tidak didukung');
+      setLocationText('GPS tidak didukung. Coba buka di browser HP yang mendukung lokasi.');
       setGpsLoading(false);
+      showToast('GPS tidak didukung di browser ini.', 'warning');
       return;
     }
 
@@ -141,15 +142,10 @@ export default function HomeTab({
       },
       (err) => {
         console.warn('[GPS] Gagal mengambil lokasi:', err);
-        // Fallback simulated location for PC/Offline testing
-        const simulatedLat = -3.312345;
-        const simulatedLng = 117.594321;
-        const simulatedAcc = 15;
-        
-        setLocation({ latitude: simulatedLat, longitude: simulatedLng, accuracy: simulatedAcc });
-        setLocationText(`${simulatedLat}, ${simulatedLng} (Lokasi Simulasi)`);
+        setGpsError('Gagal mengambil lokasi GPS. Pastikan GPS aktif dan izinkan akses lokasi.');
+        setLocationText('Lokasi belum terdeteksi');
         setGpsLoading(false);
-        showToast('Gagal memuat GPS. Menggunakan koordinat simulasi untuk absensi.', 'info');
+        showToast('Gagal mengambil lokasi GPS. Pastikan GPS HP aktif dan izin lokasi diizinkan.', 'warning');
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
@@ -218,6 +214,11 @@ export default function HomeTab({
   const handleAbsenSubmit = async () => {
     if (!photoData) {
       showToast('Silakan ambil foto terlebih dahulu', 'warning');
+      return;
+    }
+
+    if (!location) {
+      showToast('Lokasi belum terdeteksi. Pastikan GPS aktif dan coba lagi.', 'warning');
       return;
     }
 
