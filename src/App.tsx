@@ -441,90 +441,144 @@ export default function App() {
   // ---------------------------------------------------------------------------
   // Siswa Attendance Actions
   // ---------------------------------------------------------------------------
-  const handleAbsenSubmit = async (
-    type: 'masuk' | 'keluar',
-    photoBase64: string,
-    location: LocationData | null,
-    locationText: string
-  ) => {
-    const now = new Date();
-    const dateKey = now.toISOString().split('T')[0];
-    
-    // Retrieve current logs
-    const cachedRecords = StorageService.getRecords();
-    let record = cachedRecords.find((r) => r.dateKey === dateKey && r.user_id === userId);
+    const handleAbsenSubmit = async (
+      type: 'masuk' | 'keluar',
+      photoBase64: string,
+      location: LocationData | null,
+      locationText: string
+    ) => {
+      const now = new Date();
+      // Use local date, not UTC - accounts for timezone offset (e.g., Indonesia UTC+8)
+      const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      const dateKey = localDate.toISOString().split('T')[0];
 
-    // Compress and resize the photo (max 800px, quality 70%) before queueing and saving
-    let processedPhoto = photoBase64;
-    try {
-      processedPhoto = await compressAndResizeImage(photoBase64, 800, 0.7);
-    } catch (err) {
-      console.warn('[Compression] Error compressing image:', err);
-    }
+      // Retrieve current logs
+      const cachedRecords = StorageService.getRecords();
+      let record = cachedRecords.find((r) => r.dateKey === dateKey && r.user_id === userId);
 
-    const entryDetail = {
-      type,
-      time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-      isoTime: now.toISOString(),
-      location,
-      locationText,
-      photo: processedPhoto,
-      createdAt: now.toISOString()
-    };
+      // Auto-close ALL incomplete records from any previous day if user is checking in on a new day
+      if (type === 'masuk' && !record) {
+        console.log('[DailyLimit] Checking for incomplete records from previous days...');
+        
+        const incompleteRecords = cachedRecords.filter(
+          (r) => r.user_id === userId && r.masuk && !r.keluar && r.dateKey < dateKey
+        );
+        
+        console.log(`[DailyLimit] Found ${incompleteRecords.length} incomplete record(s) to auto-close`);
+        
+        for (const incompleteRecord of incompleteRecords) {
+          try {
+            // Create auto-close keluar entry at 23:57 (default checkout time for previous day)
+            const autoCloseTime = new Date(`${incompleteRecord.dateKey}T23:57:00`);
+            incompleteRecord.keluar = {
+              type: 'keluar',
+              time: autoCloseTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+              isoTime: autoCloseTime.toISOString(),
+              location: incompleteRecord.masuk?.location || null,
+              locationText: incompleteRecord.masuk?.locationText || 'Auto-close',
+              photo: null,
+              createdAt: now.toISOString()
+            };
+            incompleteRecord.updatedAt = now.toISOString();
+            
+            // Queue the auto-close update
+            await Queue.add({
+              type: 'ABSEN',
+              record: incompleteRecord,
+              entryType: 'keluar',
+              action: 'UPSERT'
+            });
+            
+            console.log(`[DailyLimit] Auto-closed record from ${incompleteRecord.dateKey}`);
+          } catch (err) {
+            console.warn(`[DailyLimit] Failed to auto-close record from ${incompleteRecord.dateKey}:`, err);
+          }
+        }
+        
+        if (incompleteRecords.length > 0) {
+          // Force save and refresh state to update HomeTab UI
+          StorageService.saveRecords(cachedRecords);
+          setRecords([...cachedRecords]);
+          showToast(`${incompleteRecords.length} record absensi sebelumnya telah ditutup otomatis.`, 'info');
+        }
+      }
 
-    if (!record) {
-      // Create new record if check-in for the day
-      record = {
-        id: crypto.randomUUID ? crypto.randomUUID() : `rec-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        user_id: userId || 'local-user',
-        dateKey,
-        status: 'Pending',
-        nis: profile.nis,
-        nama: profile.nama,
-        kelas: profile.kelas,
-        tempatPkl: profile.tempatPkl,
-        validatedAt: null,
-        validatedBy: null,
-        masuk: null,
-        keluar: null,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString()
-      };
-      cachedRecords.push(record);
-    }
+     // Compress and resize the photo (max 800px, quality 70%) before queueing and saving
+     let processedPhoto = photoBase64;
+     try {
+       processedPhoto = await compressAndResizeImage(photoBase64, 800, 0.7);
+     } catch (err) {
+       console.warn('[Compression] Error compressing image:', err);
+     }
 
-    if (type === 'masuk') {
-      record.masuk = entryDetail;
-    } else {
-      record.keluar = entryDetail;
-    }
+     const entryDetail = {
+       type,
+       time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+       isoTime: now.toISOString(),
+       location,
+       locationText,
+       photo: processedPhoto,
+       createdAt: now.toISOString()
+     };
 
-    record.updatedAt = now.toISOString();
+     if (!record) {
+       // Create new record if check-in for the day
+       record = {
+         id: crypto.randomUUID ? crypto.randomUUID() : `rec-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+         user_id: userId || 'local-user',
+         dateKey,
+         status: 'Pending',
+         nis: profile.nis,
+         nama: profile.nama,
+         kelas: profile.kelas,
+         tempatPkl: profile.tempatPkl,
+         validatedAt: null,
+         validatedBy: null,
+         masuk: null,
+         keluar: null,
+         createdAt: now.toISOString(),
+         updatedAt: now.toISOString()
+       };
+       cachedRecords.push(record);
+       console.log(`[CreateRecord] Record baru dibuat untuk ${dateKey}`);
+     }
 
-    // Cache updated logs
-    const updatedRecords = [...cachedRecords];
-    StorageService.saveRecords(updatedRecords);
-    setRecords(updatedRecords);
+     if (type === 'masuk') {
+       record.masuk = entryDetail;
+     } else {
+       record.keluar = entryDetail;
+     }
 
-    // Add task payload in IndexedDB sync queue
-    try {
-      await Queue.add({
-        type: 'ABSEN',
-        record,
-        entryType: type,
-        action: 'UPSERT'
-      });
-      await updateQueueStats();
+     record.updatedAt = now.toISOString();
 
-      showToast(`Absen ${type === 'masuk' ? 'masuk' : 'keluar'} berhasil disimpan ke penyimpanan lokal.`, 'success');
-      
-      // Trigger sync
-      setTimeout(() => runSync(), 100);
-    } catch (e) {
-      console.error('[DB] Queue error:', e);
-      showToast('Gagal memproses antrean sinkronisasi offline.', 'error');
-    }
-  };
+     // Cache updated logs
+     const updatedRecords = cachedRecords.map(r => r.dateKey === dateKey && r.user_id === userId ? record : r);
+     StorageService.saveRecords(updatedRecords);
+     setRecords(updatedRecords);
+     console.log(`[AbsenSubmit] Record ${type} disimpan untuk ${dateKey}:`, record);
+
+     // Add task payload in IndexedDB sync queue
+     try {
+       await Queue.add({
+         type: 'ABSEN',
+         record,
+         entryType: type,
+         action: 'UPSERT'
+       });
+       await updateQueueStats();
+
+       showToast(`Absen ${type === 'masuk' ? 'masuk' : 'keluar'} berhasil disimpan ke penyimpanan lokal.`, 'success');
+       
+       // Trigger sync - dengan delay untuk ensure state ter-update
+       setTimeout(() => {
+         console.log('[AbsenSubmit] Memulai sync...');
+         runSync();
+       }, 100);
+     } catch (e) {
+       console.error('[DB] Queue error:', e);
+       showToast('Gagal memproses antrean sinkronisasi offline.', 'error');
+     }
+   };
 
   // ---------------------------------------------------------------------------
   // Profile Editor Action
@@ -965,7 +1019,10 @@ export default function App() {
   }
 
   // Find today's record for active home state
-  const todayKey = new Date().toISOString().split('T')[0];
+  // Use local date, not UTC - accounts for timezone offset (e.g., Indonesia UTC+8)
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  const todayKey = localDate.toISOString().split('T')[0];
   const todayRecord = records.find((r) => r.dateKey === todayKey && r.user_id === userId) || null;
 
   // Device & Platform Checks

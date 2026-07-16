@@ -289,7 +289,7 @@ export default function HomeTab({
             }`}
           >
             <LogOut className="w-5 h-5" />
-            Keluar
+            Pulang
           </button>
         </div>
       </div>
