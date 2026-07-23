@@ -130,24 +130,35 @@ export default function HomeTab({
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(7));
-        const lng = Number(pos.coords.longitude.toFixed(7));
-        const acc = Math.round(pos.coords.accuracy);
+    const successCallback = (pos: GeolocationPosition) => {
+      const lat = Number(pos.coords.latitude.toFixed(7));
+      const lng = Number(pos.coords.longitude.toFixed(7));
+      const acc = Math.round(pos.coords.accuracy);
 
-        setLocation({ latitude: lat, longitude: lng, accuracy: acc });
-        setLocationText(`${lat}, ${lng} (Akurasi: ±${acc}m)`);
-        setGpsLoading(false);
-      },
+      setLocation({ latitude: lat, longitude: lng, accuracy: acc });
+      setLocationText(`${lat}, ${lng} (Akurasi: ±${acc}m)`);
+      setGpsLoading(false);
+    };
+
+    // Stage 1: High accuracy, short timeout
+    navigator.geolocation.getCurrentPosition(
+      successCallback,
       (err) => {
-        console.warn('[GPS] Gagal mengambil lokasi:', err);
-        setGpsError('Gagal mengambil lokasi GPS. Pastikan GPS aktif dan izinkan akses lokasi.');
-        setLocationText('Lokasi belum terdeteksi');
-        setGpsLoading(false);
-        showToast('Gagal mengambil lokasi GPS. Pastikan GPS HP aktif dan izin lokasi diizinkan.', 'warning');
+        console.warn('[GPS Stage 1] Gagal mengambil lokasi, mencoba Stage 2:', err);
+        // Stage 2: Standard accuracy (cellular/WiFi), longer timeout
+        navigator.geolocation.getCurrentPosition(
+          successCallback,
+          (err2) => {
+            console.warn('[GPS Stage 2] Gagal mengambil lokasi:', err2);
+            setGpsError('Gagal mengambil lokasi GPS. Pastikan GPS aktif dan izinkan akses lokasi.');
+            setLocationText('Lokasi belum terdeteksi');
+            setGpsLoading(false);
+            showToast('Gagal mengambil lokasi GPS. Pastikan GPS HP aktif dan izin lokasi diizinkan.', 'warning');
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 15000 }
     );
   };
 
