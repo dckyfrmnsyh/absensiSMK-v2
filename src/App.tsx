@@ -1,22 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Home, Clock, User, Shield, GraduationCap, ClipboardCheck, Download, Smartphone, Share, Plus, Monitor, X, Check,ClipboardList  } from 'lucide-react';
 import Header from './components/Header';
-import HomeTab from './components/HomeTab';
-import RiwayatTab from './components/RiwayatTab';
-import ProfilTab from './components/ProfilTab';
-import AdminTab from './components/AdminTab';
-import Login from './components/Login';
-import LaporanHarianSiswaTab from './components/LaporanHarianSiswaTab';
 import Toast, { ToastMessage } from './components/Toast';
-import { Profile, AttendanceRecord, QueueItem, LocationData, AuditLog } from './types';
+import { Profile, AttendanceRecord, LocationData, AuditLog } from './types';
 import { isSupabaseConfigured, SupabaseAdapter } from './lib/supabase';
 import { Queue, StorageService } from './lib/db';
+
+const HomeTab = lazy(() => import('./components/HomeTab'));
+const RiwayatTab = lazy(() => import('./components/RiwayatTab'));
+const ProfilTab = lazy(() => import('./components/ProfilTab'));
+const AdminTab = lazy(() => import('./components/AdminTab'));
+const Login = lazy(() => import('./components/Login'));
+const LaporanHarianSiswaTab = lazy(() => import('./components/LaporanHarianSiswaTab'));
 
 export default function App() {
   // Session States
   const [authChecked, setAuthChecked] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'siswa' | 'admin' | null>(null);
+
+  // App sync session ID to prevent race conditions on user change
+  const syncSessionRef = useRef(0);
 
   // App States
   const [profile, setProfile] = useState<Profile>(StorageService.getProfile());
@@ -139,6 +143,8 @@ export default function App() {
       return;
     }
 
+    const sessionAtStart = syncSessionRef.current;
+
     try {
       const queue = await Queue.getAll();
       if (queue.length === 0) {
@@ -147,10 +153,25 @@ export default function App() {
         return;
       }
 
+      // Filter queue elements only belonging to current owner to avoid sending other user data
+      const currentUserId = localStorage.getItem('smkn1_session_user_id') || '';
+      const userQueue = queue.filter(item => item.ownerId === currentUserId);
+      if (userQueue.length === 0) {
+        await hydrateFromSupabase();
+        await updateQueueStats();
+        return;
+      }
+
       showToast('Mensinkronkan antrean data offline...', 'info');
 
-      for (const item of queue) {
+      for (const item of userQueue) {
         if (!navigator.onLine) break;
+        
+        // Cancel sync execution if user has logged out or logged in with a different account
+        if (syncSessionRef.current !== sessionAtStart || localStorage.getItem('smkn1_session_user_id') !== currentUserId) {
+          console.warn('[Sync] Sync cancelled: session state changed.');
+          return;
+        }
 
         try {
           if (item.payload.type === 'ABSEN' && item.payload.record) {
@@ -177,9 +198,11 @@ export default function App() {
         }
       }
 
-      await hydrateFromSupabase();
-      await updateQueueStats();
-      showToast('Sinkronisasi data berhasil diselesaikan', 'success');
+      if (syncSessionRef.current === sessionAtStart) {
+        await hydrateFromSupabase();
+        await updateQueueStats();
+        showToast('Sinkronisasi data berhasil diselesaikan', 'success');
+      }
     } catch (err) {
       console.warn('[Sync] Error running queue sync:', err);
     }
@@ -327,6 +350,11 @@ export default function App() {
     // Vite dynamic chunk preload error handler
     const handlePreloadError = (e: Event) => {
       console.warn('[Vite] Preload error detected (chunk failed). Reloading page for new assets...', e);
+      if ('caches' in window) {
+        caches.keys().then((keys) => {
+          keys.forEach((key) => caches.delete(key));
+        });
+      }
       window.location.reload();
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
@@ -340,10 +368,33 @@ export default function App() {
       );
       if (isChunkError) {
         console.warn('[GlobalError] Chunk loading error detected. Reloading page...', e);
+        if ('caches' in window) {
+          caches.keys().then((keys) => {
+            keys.forEach((key) => caches.delete(key));
+          });
+        }
         window.location.reload();
       }
     };
     window.addEventListener('error', handleGlobalError);
+
+    // Unhandled promise rejection check (dynamic import failure is a rejected promise)
+    const handlePromiseRejection = (e: PromiseRejectionEvent) => {
+      const message = e.reason?.message || '';
+      const isChunkError = message.includes('Loading chunk') || 
+                          message.includes('Importing a module script failed') ||
+                          message.includes('failed to fetch dynamically imported module');
+      if (isChunkError) {
+        console.warn('[UnhandledRejection] Chunk loading error. Cleaning cache and reloading...', e);
+        if ('caches' in window) {
+          caches.keys().then((keys) => {
+            keys.forEach((key) => caches.delete(key));
+          });
+        }
+        window.location.reload();
+      }
+    };
+    window.addEventListener('unhandledrejection', handlePromiseRejection);
 
     // Ask for Notification permission on startup/login
     if ('Notification' in window && Notification.permission === 'default') {
@@ -387,7 +438,14 @@ export default function App() {
 
     // Service Worker Registration and Sync Message Listening
     let handleSwMessage: any = null;
+    const handleControllerChange = () => {
+      console.log('[ServiceWorker] Controller changed. Reloading page...');
+      window.location.reload();
+    };
+
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
       navigator.serviceWorker.register('/service-worker.js')
         .then((reg) => {
           console.log('[ServiceWorker] Berhasil didaftarkan:', reg.scope);
@@ -430,10 +488,14 @@ export default function App() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as any);
       window.removeEventListener('vite:preloadError', handlePreloadError);
       window.removeEventListener('error', handleGlobalError);
+      window.removeEventListener('unhandledrejection', handlePromiseRejection);
       clearInterval(clientCheckInterval);
       clearInterval(versionCheckInterval);
-      if (handleSwMessage && 'serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+        if (handleSwMessage) {
+          navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+        }
       }
     };
   }, []);
@@ -448,13 +510,14 @@ export default function App() {
       locationText: string
     ) => {
       const now = new Date();
-      // Use local date, not UTC - accounts for timezone offset (e.g., Indonesia UTC+8)
-      const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-      const dateKey = localDate.toISOString().split('T')[0];
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const dateKey = `${year}-${month}-${day}`;
 
       // Retrieve current logs
       const cachedRecords = StorageService.getRecords();
-      let record = cachedRecords.find((r) => r.dateKey === dateKey && r.user_id === userId);
+      let record = userId ? cachedRecords.find((r) => r.dateKey === dateKey && r.user_id === userId) : undefined;
 
       // Auto-close ALL incomplete records from any previous day if user is checking in on a new day
       if (type === 'masuk' && !record) {
@@ -923,6 +986,7 @@ export default function App() {
         } catch (_) {}
 
         // Complete local cleanup
+        syncSessionRef.current++;
         localStorage.removeItem('smkn1_session_user_id');
         localStorage.removeItem('smkn1_role');
         localStorage.removeItem('smkn1_session_role');
@@ -950,10 +1014,10 @@ export default function App() {
         setRecords([]);
         setProfile({
           id: '',
-          nis: '12345678',
-          nama: 'M. Reza Pratama',
-          kelas: 'XII RPL 1',
-          tempatPkl: 'PT. Teknologi Karya (Tarakan)',
+          nis: '',
+          nama: '',
+          kelas: '',
+          tempatPkl: '',
           role: 'siswa'
         });
         setSyncStats({ pending: 0, total: 0, failedFinal: 0 });
@@ -988,6 +1052,7 @@ export default function App() {
 
   // Login handler
   const handleLoginSuccess = (role: 'siswa' | 'admin', loggedUserId: string) => {
+    syncSessionRef.current++;
     setUserId(loggedUserId);
     setUserRole(role);
     setProfile(StorageService.getProfile());
@@ -1012,75 +1077,94 @@ export default function App() {
   if (!userId) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-slate-100 p-4">
-        <Login onLoginSuccess={handleLoginSuccess} showToast={showToast} />
+        <Suspense fallback={
+          <div className="text-center flex flex-col items-center">
+            <div className="w-12 h-12 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-xs font-bold text-slate-500">Memuat halaman login...</p>
+          </div>
+        }>
+          <Login onLoginSuccess={handleLoginSuccess} showToast={showToast} />
+        </Suspense>
         <Toast toasts={toasts} removeToast={removeToast} />
       </div>
     );
   }
 
   // Find today's record for active home state
-  // Use local date, not UTC - accounts for timezone offset (e.g., Indonesia UTC+8)
   const now = new Date();
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-  const todayKey = localDate.toISOString().split('T')[0];
-  const todayRecord = records.find((r) => r.dateKey === todayKey && r.user_id === userId) || null;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayKey = `${year}-${month}-${day}`;
+  const todayRecord = userId ? (records.find((r) => r.dateKey === todayKey && r.user_id === userId) || null) : null;
 
   // Device & Platform Checks
   const isIOS = typeof window !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
   const isStandalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
 
+  const containerClass = userRole === 'admin' 
+    ? "w-full max-w-md sm:max-w-xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl h-[100dvh] bg-gray-50 relative shadow-2xl flex flex-col overflow-hidden sm:rounded-3xl sm:h-[90vh] sm:border border-gray-250 transition-all duration-300"
+    : "w-full max-w-md h-[100dvh] bg-gray-50 relative shadow-2xl flex flex-col overflow-hidden sm:rounded-3xl sm:h-[90vh] sm:border border-gray-250 transition-all duration-300";
+
   return (
   <div className="flex justify-center items-center min-h-screen bg-slate-100 font-sans">
-    <div className="w-full max-w-md h-[100dvh] bg-gray-50 relative shadow-2xl flex flex-col overflow-hidden sm:rounded-3xl sm:h-[90vh] sm:border border-gray-250">
+    <div className={containerClass}>
       
       {/* Header */}
       <Header onLogout={handleLogout} />
 
       {/* Tabs Panels Display Wrapper */}
       <main className="flex-1 overflow-y-auto pb-24 relative bg-gray-50 p-4">
-        {activeTab === 'home' && (
-          <HomeTab
-            profile={profile}
-            todayRecord={todayRecord}
-            records={records}
-            onAbsenSubmit={handleAbsenSubmit}
-            syncStats={syncStats}
-            isOnline={isOnline}
-            onTriggerSync={runSync}
-            showToast={showToast}
-          />
-        )}
+        <Suspense fallback={
+          <div className="flex justify-center items-center h-48">
+            <div className="w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        }>
+          {activeTab === 'home' && (
+            <HomeTab
+              profile={profile}
+              todayRecord={todayRecord}
+              records={records}
+              onAbsenSubmit={handleAbsenSubmit}
+              syncStats={syncStats}
+              isOnline={isOnline}
+              onTriggerSync={runSync}
+              showToast={showToast}
+            />
+          )}
 
-        {activeTab === 'riwayat' && (
-          <RiwayatTab
-            records={records}
-            onExportBackup={handleExportBackup}
-            onResetData={handleResetData}
-            onGeneratePdf={handleGeneratePdf}
-          />
-        )}
+          {activeTab === 'riwayat' && (
+            <RiwayatTab
+              records={records}
+              onExportBackup={handleExportBackup}
+              onResetData={handleResetData}
+              onGeneratePdf={handleGeneratePdf}
+            />
+          )}
 
-        {activeTab === 'profil' && (
-          <ProfilTab
-            profile={profile}
-            onSaveProfile={handleSaveProfile}
-            showToast={showToast}
-            onTriggerInstall={() => setShowInstallModal(true)}
-          />
-        )}
+          {activeTab === 'profil' && (
+            <ProfilTab
+              profile={profile}
+              onSaveProfile={handleSaveProfile}
+              showToast={showToast}
+              onTriggerInstall={() => setShowInstallModal(true)}
+            />
+          )}
 
-        {activeTab === 'laporan' && (
-          <LaporanHarianSiswaTab profile={profile} showToast={showToast} />
-        )}
+          {activeTab === 'laporan' && (
+            <LaporanHarianSiswaTab profile={profile} showToast={showToast} />
+          )}
 
-        {activeTab === 'admin' && userRole === 'admin' && (
-          <AdminTab
-            records={records}
-            onValidateRecord={handleValidateRecord}
-            isOnline={isOnline}
-            showToast={showToast}
-          />
-        )}
+          {activeTab === 'admin' && userRole === 'admin' && (
+            <AdminTab
+              records={records}
+              onValidateRecord={handleValidateRecord}
+              isOnline={isOnline}
+              showToast={showToast}
+              onRefreshData={hydrateFromSupabase}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Footer Navigation Bar */}

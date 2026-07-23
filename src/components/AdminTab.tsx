@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Shield, Search, Eye, FileSpreadsheet, Download, Upload, 
   AlertCircle, CheckCircle, Clock, X, ImageIcon, MapPin,
-  ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight 
+  ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { AttendanceRecord, Profile, AuditLog } from '../types';
@@ -14,18 +15,122 @@ interface AdminTabProps {
   onValidateRecord: (recordId: string, status: 'Valid' | 'Ditolak') => Promise<void>;
   isOnline: boolean;
   showToast: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
+  onRefreshData?: () => Promise<void>;
 }
 
 export default function AdminTab({
   records,
   onValidateRecord,
   isOnline,
-  showToast
+  showToast,
+  onRefreshData
 }: AdminTabProps) {
+  // 1. Statistik Hari Ini
+  const now = new Date();
+  const year = now.getFullYear();
+  const monthStr = String(now.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(now.getDate()).padStart(2, '0');
+  const todayKey = `${year}-${monthStr}-${dayStr}`;
+
+  // Get active unique students (extract from user_id)
+  const uniqueStudents = Array.from(new Set(records.map(r => r.user_id)));
+  const totalSiswaAktif = uniqueStudents.length || 1;
+  const hadirHariIni = records.filter(r => r.dateKey === todayKey && r.masuk).length;
+
+  // 2. Grafik Kehadiran Mingguan (7 Hari Terakhir)
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(now.getDate() - (6 - i));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dayVal = String(d.getDate()).padStart(2, '0');
+    const dKey = `${y}-${m}-${dayVal}`;
+    const label = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' });
+    const count = records.filter(r => r.dateKey === dKey && r.masuk).length;
+    return { label, count };
+  });
+  const maxCount = Math.max(...last7Days.map(d => d.count), 1);
+
+  // 3. Aktivitas Terkini (Live Feed)
+  const activities: Array<{ id: string; nama: string; kelas: string; tipe: 'Masuk' | 'Keluar'; waktu: string; timestamp: number }> = [];
+  records.forEach(r => {
+    if (r.masuk) {
+      activities.push({
+        id: `${r.id}-masuk`,
+        nama: r.nama,
+        kelas: r.kelas,
+        tipe: 'Masuk',
+        waktu: r.masuk.time,
+        timestamp: new Date(r.masuk.isoTime || r.masuk.createdAt || r.createdAt).getTime()
+      });
+    }
+    if (r.keluar) {
+      activities.push({
+        id: `${r.id}-keluar`,
+        nama: r.nama,
+        kelas: r.kelas,
+        tipe: 'Keluar',
+        waktu: r.keluar.time,
+        timestamp: new Date(r.keluar.isoTime || r.keluar.createdAt || r.createdAt).getTime()
+      });
+    }
+  });
+  const recentActivities = activities
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 5);
+
+  // 4. Peringatan (Alerts)
+  const alerts: Array<{ type: 'warning' | 'info'; message: string }> = [];
+
+  // Alert pending validation
+  const pendingCount = records.filter(r => r.status === 'Pending').length;
+  if (pendingCount > 0) {
+    alerts.push({
+      type: 'info',
+      message: `${pendingCount} pengajuan absensi siswa berstatus Pending butuh persetujuan.`
+    });
+  }
+
+  // Alert tidak absen > 3 hari
+  const studentLastSeen = new Map<string, { nama: string; lastDate: string }>();
+  records.forEach(r => {
+    const existing = studentLastSeen.get(r.user_id);
+    if (!existing || r.dateKey > existing.lastDate) {
+      studentLastSeen.set(r.user_id, { nama: r.nama, lastDate: r.dateKey });
+    }
+  });
+
+  studentLastSeen.forEach((value) => {
+    const lastDate = new Date(`${value.lastDate}T00:00:00`);
+    const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays > 3) {
+      alerts.push({
+        type: 'warning',
+        message: `Siswa ${value.nama} sudah tidak absen selama ${diffDays} hari (Terakhir: ${value.lastDate}).`
+      });
+    }
+  });
+
   // Navigation & Search State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [lightboxPhoto, setLightboxPhoto] = useState<{ src: string; title: string } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefreshData) return;
+    setRefreshing(true);
+    showToast('Menarik data absensi terbaru...', 'info');
+    try {
+      await onRefreshData();
+      showToast('Data absensi berhasil diperbarui', 'success');
+    } catch (err) {
+      showToast('Gagal memperbarui data', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Drag Scroll Table States
   const tableContainerRef = React.useRef<HTMLDivElement>(null);
@@ -512,17 +617,123 @@ export default function AdminTab({
   return (
     <div className="space-y-4">
       {/* Administrator Header */}
-      <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm relative overflow-hidden">
+      <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="absolute -right-4 -top-4 opacity-[0.06] text-cyan-600 pointer-events-none select-none z-0">
           <Shield className="w-40 h-40" />
         </div>
-        <h2 className="text-lg font-black relative z-10 text-slate-800 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-cyan-600" />
-          Panel Administrator
-        </h2>
-        <p className="text-xs text-slate-500 mt-1.5 relative z-10 leading-relaxed font-semibold">
-          Validasi data absensi, ekspor laporan rekapitulasi, dan unggah roster siswa baru.
-        </p>
+        <div className="relative z-10 flex-1">
+          <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-cyan-600" />
+            Panel Administrator
+          </h2>
+          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed font-semibold">
+            Validasi data absensi, ekspor laporan rekapitulasi, dan unggah roster siswa baru.
+          </p>
+        </div>
+        {onRefreshData && (
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="relative z-10 w-full sm:w-auto bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 cursor-pointer border-none shadow-md shadow-cyan-600/10 active:scale-95 transition-all text-xs"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Tarik Data Terbaru
+          </button>
+        )}
+      </div>
+
+      {/* Dashboard Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Left: Stats & Charts & Alerts (Col span 2) */}
+        <div className="md:col-span-2 lg:col-span-2 space-y-4">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Siswa Aktif</h4>
+              <p className="text-2xl font-black text-slate-800">{totalSiswaAktif}</p>
+            </div>
+            <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hadir Hari Ini</h4>
+              <p className="text-2xl font-black text-emerald-600">{hadirHariIni} <span className="text-xs font-bold text-slate-400">/ {totalSiswaAktif}</span></p>
+            </div>
+          </div>
+
+          {/* Weekly Chart */}
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm">
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-4">Grafik Kehadiran Mingguan</h4>
+            <div className="flex items-end justify-between gap-2 h-36 pt-4 border-b border-slate-100">
+              {last7Days.map((d, idx) => {
+                const heightPercent = Math.round((d.count / maxCount) * 100);
+                return (
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-1 group">
+                    <div className="relative w-full flex flex-col items-center justify-end h-24">
+                      <span className="absolute -top-6 text-[9px] font-black text-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-100">
+                        {d.count}
+                      </span>
+                      <div 
+                        style={{ height: `${Math.max(heightPercent, 8)}%` }}
+                        className="w-full sm:w-8 bg-cyan-500 group-hover:bg-cyan-600 rounded-t-lg transition-all duration-300 shadow-sm"
+                      />
+                    </div>
+                    <span className="text-[9px] font-extrabold text-slate-500 whitespace-nowrap mt-1">{d.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Alerts Section */}
+          {alerts.length > 0 && (
+            <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm space-y-2 max-h-56 overflow-y-auto">
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Notifikasi & Peringatan</h4>
+              {alerts.map((al, idx) => (
+                <div 
+                  key={idx} 
+                  className={`p-3 rounded-2xl border text-xs font-semibold leading-relaxed flex items-start gap-2 ${
+                    al.type === 'warning' 
+                      ? 'bg-amber-50 border-amber-200/80 text-amber-700' 
+                      : 'bg-blue-50 border-blue-200/80 text-blue-700'
+                  }`}
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{al.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Live Feed (Col span 1) */}
+        <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm space-y-4">
+          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Aktivitas Terkini (Live Feed)</h4>
+          <div className="relative border-l border-slate-100 pl-4 ml-2 space-y-4 max-h-[300px] overflow-y-auto">
+            {recentActivities.length === 0 ? (
+              <p className="text-xs font-bold text-slate-400 py-4">Belum ada aktivitas hari ini.</p>
+            ) : (
+              recentActivities.map((act) => (
+                <div key={act.id} className="relative">
+                  <span className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                    act.tipe === 'Masuk' ? 'bg-emerald-500' : 'bg-red-500'
+                  }`} />
+                  <div>
+                    <p className="text-xs font-extrabold text-slate-800">{act.nama}</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">{act.kelas}</p>
+                    <div className="flex gap-2 items-center mt-1.5">
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                        act.tipe === 'Masuk' 
+                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' 
+                          : 'bg-red-50 text-red-600 border border-red-100'
+                      }`}>
+                        {act.tipe}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500">{act.waktu}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Validation Panel Card */}

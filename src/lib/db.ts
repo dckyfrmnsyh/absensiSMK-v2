@@ -208,10 +208,10 @@ export const StorageService = {
   getProfile(): Profile {
     const defaultProfile: Profile = {
       id: '',
-      nis: '12345678',
-      nama: 'M. Reza Pratama',
-      kelas: 'XII RPL 1',
-      tempatPkl: 'PT. Teknologi Karya (Tarakan)',
+      nis: '',
+      nama: '',
+      kelas: '',
+      tempatPkl: '',
       role: 'siswa'
     };
 
@@ -255,8 +255,53 @@ export const StorageService = {
       const data: AttendanceRecord[] = JSON.parse(raw);
       if (!Array.isArray(data)) return [];
 
+      const userId = localStorage.getItem('smkn1_session_user_id') || '';
+      const role = localStorage.getItem('smkn1_role') || localStorage.getItem('smkn1_session_role');
+      const filtered = role === 'admin' ? data : data.filter(r => r.user_id === userId);
+
+      const normalized = filtered.map(r => {
+        const entryMasuk = r.masuk ? {
+          type: 'masuk' as const,
+          time: r.masuk.time || '',
+          isoTime: r.masuk.isoTime || r.masuk.createdAt || null,
+          location: r.masuk.location || null,
+          locationText: r.masuk.locationText || '',
+          photo: r.masuk.photo || null,
+          createdAt: r.masuk.createdAt || r.masuk.isoTime || undefined
+        } : null;
+
+        const entryKeluar = r.keluar ? {
+          type: 'keluar' as const,
+          time: r.keluar.time || '',
+          isoTime: r.keluar.isoTime || r.keluar.createdAt || null,
+          location: r.keluar.location || null,
+          locationText: r.keluar.locationText || '',
+          photo: r.keluar.photo || null,
+          createdAt: r.keluar.createdAt || r.keluar.isoTime || undefined
+        } : null;
+
+        return {
+          id: r.id || `rec-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          user_id: r.user_id || userId || 'local-user',
+          dateKey: r.dateKey || '',
+          status: r.status || 'Pending',
+          nis: r.nis || '',
+          nama: r.nama || '',
+          kelas: r.kelas || '',
+          tempatPkl: r.tempatPkl || '',
+          validatedAt: r.validatedAt || null,
+          validatedBy: r.validatedBy || null,
+          validatedByName: r.validatedByName || null,
+          masuk: entryMasuk,
+          keluar: entryKeluar,
+          createdAt: r.createdAt || new Date().toISOString(),
+          updatedAt: r.updatedAt || new Date().toISOString(),
+          auditLog: Array.isArray(r.auditLog) ? r.auditLog : []
+        } as AttendanceRecord;
+      });
+
       // Sort records by date descending
-      return [...data].sort((a, b) => {
+      return [...normalized].sort((a, b) => {
         const da = new Date(a.dateKey);
         const db = new Date(b.dateKey);
         return db.getTime() - da.getTime();
