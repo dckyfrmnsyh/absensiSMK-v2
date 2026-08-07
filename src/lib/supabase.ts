@@ -293,36 +293,37 @@ export const SupabaseAdapter = {
   },
 
   async syncAttendanceRecord(record: AttendanceRecord, entryType: 'masuk' | 'keluar'): Promise<any> {
-    if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return null;
 
-    const entry = entryType === 'keluar' ? record.keluar : record.masuk;
-    if (!entry) return null;
+  const entry = entryType === 'keluar' ? record.keluar : record.masuk;
+  if (!entry) return null;
 
-    let photoPath = entry.photo || null;
+  let photoPath = entry.photo || null;
 
-    // Convert and upload photo if it is base64 string
-    if (photoPath && photoPath.startsWith('data:image/')) {
-      const uploadedPath = await this.uploadPhoto(record.user_id, record.dateKey, entryType, photoPath);
-      if (uploadedPath) {
-        photoPath = uploadedPath;
-      }
+  if (photoPath && photoPath.startsWith('data:image/')) {
+    const uploadedPath = await this.uploadPhoto(record.user_id, record.dateKey, entryType, photoPath);
+    if (uploadedPath) {
+      photoPath = uploadedPath;
     }
+  }
 
-    // Use RPC function "submit_attendance_entry" as defined in database schema
-    const { data, error } = await supabase.rpc('submit_attendance_entry', {
-      p_type: entryType,
-      p_client_iso_time: entry.isoTime || new Date().toISOString(),
-      p_lat: entry.location?.latitude ?? null,
-      p_lng: entry.location?.longitude ?? null,
-      p_accuracy: entry.location?.accuracy ?? null,
-      p_location_text: entry.locationText || null,
-      p_photo_path: photoPath
-    });
+  // Kirim record.id dan record.dateKey secara eksplisit ke database!
+  const { data, error } = await supabase.rpc('submit_attendance_entry', {
+    p_type: entryType,
+    p_client_iso_time: entry.isoTime || new Date().toISOString(),
+    p_lat: entry.location?.latitude ?? null,
+    p_lng: entry.location?.longitude ?? null,
+    p_accuracy: entry.location?.accuracy ?? null,
+    p_location_text: entry.locationText || null,
+    p_photo_path: photoPath,
+    p_date_key: record.dateKey,   // 👈 KIRIM TANGGAL DARI REACT
+    p_record_id: record.id        // 👈 KIRIM ID DARI REACT
+  });
 
-    if (error) {
-      console.error('[Supabase] Gagal submit entry via RPC:', error);
-      throw error;
-    }
+  if (error) {
+    console.error('[Supabase] Gagal submit entry via RPC:', error);
+    throw error;
+  }
 
     return data;
   },

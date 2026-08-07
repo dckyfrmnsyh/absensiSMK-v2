@@ -3,7 +3,7 @@ import {
   Shield, Search, Eye, FileSpreadsheet, Download, Upload, 
   AlertCircle, CheckCircle, Clock, X, ImageIcon, MapPin,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight,
-  RefreshCw
+  RefreshCw, CheckSquare
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { AttendanceRecord, Profile, AuditLog } from '../types';
@@ -165,9 +165,19 @@ export default function AdminTab({
   const [sortField, setSortField] = useState<'nama' | 'dateKey' | 'time' | 'status'>('dateKey');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100000);
+  const [pageSize, setPageSize] = useState(20); 
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [classFilter, setClassFilter] = useState('ALL');
+
+  // ==== BULK ACTION STATES ====
+  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
+  const [isBulkValidating, setIsBulkValidating] = useState(false);
+
+  // Clear selections when filters or pagination changes
+  useEffect(() => {
+    setSelectedRecordIds([]);
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, classFilter, sortField, sortOrder, pageSize]);
 
   // Excel Export States
   const [exportMonth, setExportMonth] = useState(() => {
@@ -189,9 +199,6 @@ export default function AdminTab({
     const classes = Array.from(new Set(records.map(r => r.kelas).filter(Boolean)));
     setClassList(classes);
   }, [records]);
-
-  // Active record for modal detail
-  const activeRecord = records.find(r => r.id === selectedRecordId);
 
   // Filter records based on search terms and dropdown filters
   const filteredRecords = records.filter(r => {
@@ -235,15 +242,73 @@ export default function AdminTab({
     return 0;
   });
 
-  // Reset page number when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, statusFilter, classFilter, sortField, sortOrder]);
-
   const totalItems = sortedRecords.length;
   const totalPages = Math.ceil(totalItems / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
   const paginatedRecords = sortedRecords.slice(startIndex, startIndex + pageSize);
+
+  // Active record for modal detail and navigation logic
+  const activeRecord = sortedRecords.find(r => r.id === selectedRecordId);
+  const currentRecordIndex = sortedRecords.findIndex(r => r.id === selectedRecordId);
+  const hasPrevRecord = currentRecordIndex > 0;
+  const hasNextRecord = currentRecordIndex >= 0 && currentRecordIndex < sortedRecords.length - 1;
+
+  const handlePrevRecord = () => {
+    if (hasPrevRecord) {
+      setSelectedRecordId(sortedRecords[currentRecordIndex - 1].id);
+    }
+  };
+
+  const handleNextRecord = () => {
+    if (hasNextRecord) {
+      setSelectedRecordId(sortedRecords[currentRecordIndex + 1].id);
+    }
+  };
+
+  // ==== BULK ACTION HANDLERS ====
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedRecordIds(paginatedRecords.map(r => r.id));
+    } else {
+      setSelectedRecordIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedRecordIds(prev => [...prev, id]);
+    } else {
+      setSelectedRecordIds(prev => prev.filter(rowId => rowId !== id));
+    }
+  };
+
+  const handleBulkValidateAction = async (status: 'Valid' | 'Ditolak') => {
+    if (selectedRecordIds.length === 0) return;
+    setIsBulkValidating(true);
+    showToast(`Memproses validasi massal untuk ${selectedRecordIds.length} data...`, 'info');
+    
+    let successCount = 0;
+    let failCount = 0;
+
+    await Promise.all(selectedRecordIds.map(async (id) => {
+      try {
+        await onValidateRecord(id, status);
+        successCount++;
+      } catch (err) {
+        console.error(`Gagal memvalidasi ID ${id}`, err);
+        failCount++;
+      }
+    }));
+
+    setIsBulkValidating(false);
+    setSelectedRecordIds([]);
+
+    if (failCount === 0) {
+      showToast(`Berhasil memvalidasi massal ${successCount} data`, 'success');
+    } else {
+      showToast(`Selesai. Berhasil: ${successCount}, Gagal: ${failCount}`, 'warning');
+    }
+  };
 
   const renderSortHeader = (label: string, field: 'nama' | 'dateKey' | 'time' | 'status') => {
     const isActive = sortField === field;
@@ -316,12 +381,17 @@ export default function AdminTab({
     }) + ' WITA';
   };
 
-  // Approval/Rejection validation action
+  // Approval/Rejection validation action (Single)
   const handleValidateAction = async (status: 'Valid' | 'Ditolak') => {
     if (!selectedRecordId) return;
     try {
       await onValidateRecord(selectedRecordId, status);
-      setSelectedRecordId(null);
+      // Auto move to next record if available after validation
+      if (hasNextRecord) {
+        handleNextRecord();
+      } else {
+        setSelectedRecordId(null);
+      }
     } catch (err: any) {
       console.error(err);
       showToast('Gagal validasi status: ' + (err.message || ''), 'error');
@@ -600,12 +670,10 @@ export default function AdminTab({
   };
 
   const getRecordValidationAudit = (record: AttendanceRecord): AuditLog[] => {
-    // Collect from both stored audits and global audit store filtered by record ID
     const auditStore = StorageService.getAdminAuditLogs();
     const recordAudits = record.auditLog || [];
     const filteredStore = auditStore.filter(a => a.recordId === record.id);
     
-    // Deduplicate
     const combined = [...recordAudits, ...filteredStore];
     const unique = new Map();
     combined.forEach(item => {
@@ -705,7 +773,13 @@ export default function AdminTab({
 
         {/* Right: Live Feed (Col span 1) */}
         <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm space-y-4">
-          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Aktivitas Terkini (Live Feed)</h4>
+          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+            Aktivitas Terkini (Live Feed)
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+          </h4>
           <div className="relative border-l border-slate-100 pl-4 ml-2 space-y-4 max-h-[300px] overflow-y-auto">
             {recentActivities.length === 0 ? (
               <p className="text-xs font-bold text-slate-400 py-4">Belum ada aktivitas hari ini.</p>
@@ -753,7 +827,7 @@ export default function AdminTab({
           </div>
           
           <div className="grid grid-cols-1 gap-2 md:flex md:items-center">
-            {/* Table Search Bar - Placed prominently as the absolute first item */}
+            {/* Table Search Bar */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-600 w-4 h-4" />
               <input
@@ -793,6 +867,34 @@ export default function AdminTab({
           </div>
         </div>
 
+        {/* Bulk Action Bar (Only shows when checkboxes are selected) */}
+        {selectedRecordIds.length > 0 && (
+          <div className="bg-cyan-50/80 px-4 py-2.5 border-b border-cyan-100 flex items-center justify-between animate-fade-in sticky top-0 z-20">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="w-4 h-4 text-cyan-600" />
+              <span className="text-xs font-extrabold text-cyan-800">
+                {selectedRecordIds.length} data terpilih
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => handleBulkValidateAction('Ditolak')}
+                disabled={isBulkValidating}
+                className="text-[10px] font-bold bg-white text-red-600 border border-red-200 hover:bg-red-50 hover:border-red-300 px-3.5 py-2 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                Tolak Massal
+              </button>
+              <button 
+                onClick={() => handleBulkValidateAction('Valid')}
+                disabled={isBulkValidating}
+                className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-600 px-3.5 py-2 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-600/20"
+              >
+                Sahkan Massal (Valid)
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Data Grid / Table */}
         {paginatedRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs font-semibold">
@@ -800,32 +902,53 @@ export default function AdminTab({
           </div>
         ) : (
           <>
-            {/* Fully swipeable/drag-scrollable table frame with visible scrollbars and indicators */}
             <div 
               ref={tableContainerRef}
               onMouseDown={handleMouseDown}
               onMouseLeave={handleMouseLeave}
               onMouseUp={handleMouseUp}
               onMouseMove={handleMouseMove}
-              className="overflow-x-auto select-none cursor-grab active:cursor-grabbing pb-2 transition-all duration-150 scroll-smooth focus:outline-none"
+              className="overflow-x-auto overflow-y-auto max-h-[500px] select-none cursor-grab active:cursor-grabbing transition-all duration-150 scroll-smooth focus:outline-none"
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-              <table className="w-full text-left text-xs whitespace-nowrap table-auto min-w-[650px]">
-                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase tracking-wider text-[10px]">
+              <table className="w-full text-left text-xs whitespace-nowrap table-auto min-w-[650px] relative">
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px] sticky top-0 z-10 shadow-sm">
                   <tr>
-                    <th className="px-4 py-3">{renderSortHeader('Nama Siswa / NIS', 'nama')}</th>
-                    <th className="px-4 py-3">{renderSortHeader('Tanggal Absen', 'dateKey')}</th>
-                    <th className="px-4 py-3">{renderSortHeader('Waktu Masuk-Keluar', 'time')}</th>
-                    <th className="px-4 py-3">{renderSortHeader('Status', 'status')}</th>
-                    <th className="px-4 py-3 text-center">Aksi</th>
+                    <th className="px-4 py-3 bg-slate-50 w-12 text-center border-r border-slate-100">
+                      <input 
+                        type="checkbox"
+                        title="Pilih Semua"
+                        checked={paginatedRecords.length > 0 && selectedRecordIds.length === paginatedRecords.length}
+                        onChange={handleSelectAll}
+                        className="w-4 h-4 accent-cyan-600 cursor-pointer"
+                      />
+                    </th>
+                    <th className="px-4 py-3 bg-slate-50">{renderSortHeader('Nama Siswa / NIS', 'nama')}</th>
+                    <th className="px-4 py-3 bg-slate-50">{renderSortHeader('Tanggal Absen', 'dateKey')}</th>
+                    <th className="px-4 py-3 bg-slate-50">{renderSortHeader('Waktu Masuk-Keluar', 'time')}</th>
+                    <th className="px-4 py-3 bg-slate-50">{renderSortHeader('Status', 'status')}</th>
+                    <th className="px-4 py-3 bg-slate-50 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {paginatedRecords.map((r) => {
                     const checkin = r.masuk?.time || '--:--';
                     const checkout = r.keluar?.time || '--:--';
+                    const isSelected = selectedRecordIds.includes(r.id);
+
                     return (
-                      <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr 
+                        key={r.id} 
+                        className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-cyan-50/40' : ''}`}
+                      >
+                        <td className="px-4 py-3.5 text-center border-r border-slate-50">
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleSelectRow(r.id, e.target.checked)}
+                            className="w-4 h-4 accent-cyan-600 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-4 py-3.5">
                           <p className="font-extrabold text-slate-800">{r.nama}</p>
                           <p className="text-[10px] font-bold text-slate-400 mt-0.5">{r.kelas} • NIS: {r.nis}</p>
@@ -872,7 +995,10 @@ export default function AdminTab({
                   }}
                   className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 rounded-lg px-2 py-1 text-xs font-bold outline-none focus:border-cyan-500 cursor-pointer"
                 >
+                  <option value={7}>07</option>
                   <option value={10}>10</option>
+                  <option value={12}>12</option>
+                  <option value={20}>20</option>
                   <option value={25}>25</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
@@ -1090,12 +1216,38 @@ export default function AdminTab({
             {/* Modal Header */}
             <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-800 text-lg">Detail Absensi Siswa</h3>
-              <button
-                onClick={() => setSelectedRecordId(null)}
-                className="text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 p-1.5 rounded-full border-none cursor-pointer transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              
+              <div className="flex items-center gap-2">
+                {/* Modal Internal Navigation Prev/Next */}
+                <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+                  <button
+                    onClick={handlePrevRecord}
+                    disabled={!hasPrevRecord}
+                    className="p-1.5 text-slate-500 hover:text-cyan-600 hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+                    title="Data Sebelumnya"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-[10px] font-bold text-slate-400 px-1 min-w-[36px] text-center">
+                    {currentRecordIndex + 1} / {sortedRecords.length}
+                  </span>
+                  <button
+                    onClick={handleNextRecord}
+                    disabled={!hasNextRecord}
+                    className="p-1.5 text-slate-500 hover:text-cyan-600 hover:bg-white rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+                    title="Data Selanjutnya"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setSelectedRecordId(null)}
+                  className="text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 p-1.5 rounded-full border-none cursor-pointer transition-colors ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Profile Row */}
@@ -1121,25 +1273,25 @@ export default function AdminTab({
                 <span className="font-extrabold text-slate-800 text-right truncate pl-4">{activeRecord.masuk?.locationText || '-'}</span>
               </div>
 
-              {/* Snapshot Photo Actions */}
+              {/* Snapshot Photo Actions with Clear Empty States */}
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => lightboxPhoto ? null : activeRecord.masuk?.photo && setLightboxPhoto({ src: activeRecord.masuk.photo, title: `Foto Masuk - ${activeRecord.nama}` })}
                   disabled={!activeRecord.masuk?.photo}
-                  className="font-bold text-cyan-600 bg-slate-50 hover:bg-slate-100 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  className="font-bold text-cyan-600 bg-slate-50 hover:bg-slate-100 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform border border-slate-200 disabled:opacity-60 disabled:text-slate-400 disabled:bg-slate-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  <ImageIcon className="w-4 h-4" />
-                  Foto Masuk
+                  {activeRecord.masuk?.photo ? <ImageIcon className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                  {activeRecord.masuk?.photo ? 'Foto Masuk' : 'Masuk: Tdk Ada Foto'}
                 </button>
                 <button
                   type="button"
                   onClick={() => lightboxPhoto ? null : activeRecord.keluar?.photo && setLightboxPhoto({ src: activeRecord.keluar.photo, title: `Foto Keluar - ${activeRecord.nama}` })}
                   disabled={!activeRecord.keluar?.photo}
-                  className="font-bold text-cyan-600 bg-slate-50 hover:bg-slate-100 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  className="font-bold text-cyan-600 bg-slate-50 hover:bg-slate-100 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform border border-slate-200 disabled:opacity-60 disabled:text-slate-400 disabled:bg-slate-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  <ImageIcon className="w-4 h-4" />
-                  Foto Keluar
+                  {activeRecord.keluar?.photo ? <ImageIcon className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                  {activeRecord.keluar?.photo ? 'Foto Keluar' : 'Keluar: Tdk Ada Foto'}
                 </button>
               </div>
 
