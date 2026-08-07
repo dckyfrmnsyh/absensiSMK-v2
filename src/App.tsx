@@ -530,33 +530,34 @@ export default function App() {
         console.log(`[DailyLimit] Found ${incompleteRecords.length} incomplete record(s) to auto-close`);
         
         for (const incompleteRecord of incompleteRecords) {
-          try {
-            // Create auto-close keluar entry at 23:57 (default checkout time for previous day)
-            const autoCloseTime = new Date(`${incompleteRecord.dateKey}T23:57:00`);
-            incompleteRecord.keluar = {
-              type: 'keluar',
-              time: autoCloseTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-              isoTime: autoCloseTime.toISOString(),
-              location: incompleteRecord.masuk?.location || null,
-              locationText: incompleteRecord.masuk?.locationText || 'Auto-close',
-              photo: null,
-              createdAt: now.toISOString()
-            };
-            incompleteRecord.updatedAt = now.toISOString();
-            
-            // Queue the auto-close update
-            await Queue.add({
-              type: 'ABSEN',
-              record: incompleteRecord,
-              entryType: 'keluar',
-              action: 'UPSERT'
-            });
-            
-            console.log(`[DailyLimit] Auto-closed record from ${incompleteRecord.dateKey}`);
-          } catch (err) {
-            console.warn(`[DailyLimit] Failed to auto-close record from ${incompleteRecord.dateKey}:`, err);
-          }
+        try {
+          // 1. Ubah time menjadi teks "Lupa Absen" alih-alih 23:57
+          incompleteRecord.keluar = {
+            type: 'keluar',
+            time: 'Lupa Absen', // Teks ini akan langsung tampil di UI dan Admin
+            isoTime: new Date().toISOString(),
+            location: null,
+            locationText: 'Ditutup otomatis oleh sistem',
+            photo: null,
+            createdAt: new Date().toISOString()
+          };
+          
+          // 2. Beri status "Pending" atau langsung "Ditolak" agar admin tahu ini butuh review
+          incompleteRecord.status = 'Pending'; 
+          incompleteRecord.updatedAt = new Date().toISOString();
+          
+          await Queue.add({
+            type: 'ABSEN',
+            record: incompleteRecord,
+            entryType: 'keluar',
+            action: 'UPSERT'
+          });
+          
+          console.log(`[DailyLimit] Auto-closed record from ${incompleteRecord.dateKey}`);
+        } catch (err) {
+          console.warn(`[DailyLimit] Failed to auto-close record:`, err);
         }
+      }
         
         if (incompleteRecords.length > 0) {
           // Force save and refresh state to update HomeTab UI
